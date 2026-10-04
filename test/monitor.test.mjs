@@ -50,6 +50,17 @@ function request(monitor, model = 'actual-model', opts = {}) {
   return fetch(monitor.localUrl + '/responses', { method: 'POST', headers: { Authorization: `Bearer ${monitor.token}`, 'Content-Type': 'application/json', Cookie: 'do-not-forward=1' }, body: JSON.stringify({ model, input: 'private prompt' }), ...opts });
 }
 
+test('monitor state retains the actual connection revision and disabling restores its baseline', async t => {
+  const { controller } = await fixture(t, (_req, res) => res.end('{}'));
+  const before = (await controller.state()).current.connectionRevision;
+  assert.equal(typeof before, 'string');
+  await controller.setMonitoring(true);
+  const during = (await controller.state()).current.connectionRevision;
+  assert.equal(typeof during, 'string'); assert.notEqual(during, before);
+  await controller.setMonitoring(false);
+  assert.equal((await controller.state()).current.connectionRevision, before);
+});
+
 test('live streaming concurrency counts until EOF; provider switch pins in-flight requests', async t => {
   const connections = [];
   const { manager, controller, a, b } = await fixture(t, (req, res) => {

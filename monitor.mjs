@@ -251,7 +251,7 @@ export class MonitorController {
     const m = this.monitor;
     if (m.enabled) {
       for (const p of state.profiles) p.active = p.id === m.profile.id;
-      state.current = { url: m.profile.url, model: m.profile.model };
+      state.current = { ...state.current, url: m.profile.url, model: m.profile.model };
       state.canRestore = false;
     }
     return { ...state, monitor: m.summary() };

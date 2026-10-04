@@ -245,16 +245,19 @@ export class Manager {
     if (existing?.url !== url && existing?.encryptedKey && !key) throw new Error('修改地址时请重新填写 Key，避免把原密钥发送到另一家服务商。');
     const p = { id: existing?.id || crypto.randomUUID(), name, url, model, effort: input.effort, adapter: input.adapter,
       encryptedKey: key ? await this.codec.encrypt(key) : existing?.encryptedKey || '' };
-    if (existing) this.store.profiles[this.store.profiles.indexOf(existing)] = p;
-    else this.store.profiles.push(p);
-    await this.persist();
+    const previous = this.store;
+    this.store = { ...previous, profiles: existing ? previous.profiles.map(item => item === existing ? p : item) : [...previous.profiles, p] };
+    try { await this.persist(); }
+    catch (error) { this.store = previous; throw error; }
     this.connectionTests.delete(p.id);
   }
   async remove(id) {
     const state = await this.state();
     if (state.profiles.find(p => p.id === id)?.active) throw new Error('请先切换到其他 API，再删除当前 API。');
-    this.store.profiles = this.store.profiles.filter(p => p.id !== id);
-    await this.persist();
+    const previous = this.store;
+    this.store = { ...previous, profiles: previous.profiles.filter(p => p.id !== id) };
+    try { await this.persist(); }
+    catch (error) { this.store = previous; throw error; }
     this.connectionTests.delete(id);
   }
   async switchTo(id) {
@@ -302,8 +305,10 @@ export class Manager {
     const p = this.store.profiles.find(p => p.id === id);
     if (!p?.encryptedKey) throw new Error('请先填写此 API 的 Key。');
     const result = await queryUsage(p, await this.codec.decrypt(p.encryptedKey));
-    p.usage = result;
-    await this.persist();
+    const previous = this.store;
+    this.store = { ...previous, profiles: previous.profiles.map(item => item === p ? { ...p, usage: result } : item) };
+    try { await this.persist(); }
+    catch (error) { this.store = previous; throw error; }
     return result;
   }
   async testConnection(id) {
@@ -317,6 +322,7 @@ export class Manager {
 }
 
 export function normalizeUsage(adapter, raw) {
+  if (!raw || typeof raw !== 'object') throw new Error('服务商返回了无法识别的用量格式。');
   const d = raw.data ?? raw;
   if (raw.success === false || d.isValid === false) throw new Error('服务商拒绝了用量查询。');
   if (adapter === 'newapi') {
@@ -324,12 +330,38 @@ export function normalizeUsage(adapter, raw) {
     return { remaining: d.unlimited_quota ? null : d.total_available, used: d.total_used, unit: '额度',
       unlimited: !!d.unlimited_quota, scope: '此 Key 额度', expiresAt: d.expires_at > 0 ? d.expires_at * 1000 : null };
   }
-  if (!Number.isFinite(d.remaining) && !d.usage && !d.subscription && !d.rate_limits) throw new Error('服务商返回了无法识别的用量格式。');
-  return { remaining: Number.isFinite(d.remaining) ? d.remaining : null, used: d.quota?.used ?? d.usage?.total?.actual_cost ?? null,
-    today: d.usage?.today?.actual_cost ?? null, tokens: d.usage?.today?.total_tokens ?? null, unit: d.unit || 'USD',
+  const numeric = value => {
+    if (typeof value === 'string' && value.length <= 64 && /^-?\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.test(value)) value = Number(value);
+    return Number.isFinite(value) ? value : null;
+  };
+  if (numeric(d.remaining) === null && !d.usage && !d.subscription && !d.rate_limits) throw new Error('服务商返回了无法识别的用量格式。');
+  const units = ['USD', 'CNY', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'HKD', 'TWD', 'SGD', 'KRW', '额度'];
+  const windows = new Set(['daily', 'weekly', 'monthly', '5h', '1d', '7d']);
+  return { remaining: numeric(d.remaining), used: numeric(d.quota?.used ?? d.usage?.total?.actual_cost),
+    today: numeric(d.usage?.today?.actual_cost), tokens: numeric(d.usage?.today?.total_tokens), unit: !d.unit ? 'USD' : units.includes(d.unit) ? d.unit : '额度',
     scope: d.quota ? '此 Key 额度' : d.subscription ? '套餐剩余额度' : d.balance !== undefined ? '账户余额' : '服务商用量',
-    windows: (d.rate_limits || []).map(w => ({ name: w.window, used: w.used, limit: w.limit })),
-    subscription: d.subscription ? ['daily', 'weekly', 'monthly'].filter(w => d.subscription[`${w}_limit_usd`] != null).map(w => ({ name: w, used: d.subscription[`${w}_usage_usd`], limit: d.subscription[`${w}_limit_usd`] })) : [] };
+    windows: (Array.isArray(d.rate_limits) ? d.rate_limits.slice(0, 50) : []).filter(w => w && typeof w === 'object').map(w => ({ name: windows.has(w.window) ? w.window : '额度窗口', used: numeric(w.used), limit: numeric(w.limit) })),
+    subscription: d.subscription ? ['daily', 'weekly', 'monthly'].filter(w => numeric(d.subscription[`${w}_limit_usd`]) !== null).map(w => ({ name: w, used: numeric(d.subscription[`${w}_usage_usd`]), limit: numeric(d.subscription[`${w}_limit_usd`]) })) : [] };
+}
+
+async function readUsageBody(response) {
+  if (!response.body?.getReader) {
+    const text = await response.text();
+    if (Buffer.byteLength(text) > 1_000_000) throw new Error('用量响应过大');
+    return text;
+  }
+  const reader = response.body.getReader();
+  const chunks = []; let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 1_000_000) throw new Error('用量响应过大');
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
 export async function queryUsage(profile, key, fetcher = fetch) {
@@ -351,19 +383,22 @@ export async function queryUsage(profile, key, fetcher = fetch) {
         await response.body?.cancel();
         response = await fetcher(target.href, { ...options, redirect: 'error' });
       }
+      if (!response.ok) await response.body?.cancel();
       if (response.status === 404 || response.status === 405) { lastError = '该站点不支持此用量接口'; continue; }
       if (response.status === 401 || response.status === 403) throw new Error('Key 无效，或没有用量查询权限');
       if (!response.ok) throw new Error(`查询失败（HTTP ${response.status}）`);
-      const body = await response.text();
-      if (body.length > 1_000_000) throw new Error('用量响应过大');
+      const body = await readUsageBody(response);
       let raw;
       try { raw = JSON.parse(body); } catch { lastError = '该站点未返回用量数据'; continue; }
       return { ...normalizeUsage(adapter, raw), status: 'ok', checkedAt };
     } catch (e) {
-      const networkMessage = e.name === 'TimeoutError' ? '连接超时' : e.cause?.message === 'unexpected redirect' ? '服务商用量接口发生不兼容的跳转'
-        : e.message === 'fetch failed' ? '连接失败，请检查地址、网络和 HTTPS 证书' : e.message;
-      // Never persist remote response bodies or transport errors containing credentials.
-      lastError = networkMessage.includes(key) ? '用量查询失败' : networkMessage;
+      // Only fixed messages reach unencrypted snapshots, never transport errors or upstream strings.
+      const known = new Set(['服务商用量接口发生不兼容的跳转', 'Key 无效，或没有用量查询权限', '用量响应过大',
+        '服务商拒绝了用量查询。', '服务商返回了无法识别的用量格式。']);
+      lastError = e.name === 'TimeoutError' || e.name === 'AbortError' ? '连接超时'
+        : e.cause?.message === 'unexpected redirect' ? '服务商用量接口发生不兼容的跳转'
+        : known.has(e.message) || /^查询失败（HTTP [1-5]\d\d）$/.test(e.message) ? e.message
+        : '连接失败，请检查地址、网络和 HTTPS 证书';
       break;
     }
   }

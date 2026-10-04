@@ -6,7 +6,7 @@
 
 下载 EXE，放到有写入权限的文件夹后双击。首次启动进入操作教程，自行添加 API。软件不附带任何服务商 Key 或个人配置。
 
-Windows 10/11 x64 便携桌面工具。双击 `Codex-API-Manager-1.0.21-Windows-x64.exe`，无需安装 Node.js 或打开浏览器。软件配置、日志、备份和缓存全部保存在 EXE 旁的 `data` 文件夹。首次启动 API 列表为空，不预置服务商，不自动导入本机密钥。
+Windows 10/11 x64 便携桌面工具。双击 `Codex-API-Manager-1.0.22-Windows-x64.exe`，无需安装 Node.js 或打开浏览器。软件配置、日志、备份和缓存全部保存在 EXE 旁的 `data` 文件夹。首次启动 API 列表为空，不预置服务商，不自动导入本机密钥。
 
 ## 便携使用
 
@@ -14,7 +14,7 @@ Windows 10/11 x64 便携桌面工具。双击 `Codex-API-Manager-1.0.21-Windows-
 
 ```text
 我的工具/
-  Codex-API-Manager-1.0.21-Windows-x64.exe
+  Codex-API-Manager-1.0.22-Windows-x64.exe
   data/
     settings.json
     profiles.json
