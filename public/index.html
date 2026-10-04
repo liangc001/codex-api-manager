@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="manager-token" content="__MANAGER_TOKEN__">
+  <title>Codex API 管理</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./lucide.js" defer></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand"><span class="brand-icon"><i data-lucide="square-terminal"></i></span><h1>Codex API</h1></div>
+      <div class="toolbar">
+        <button id="help" class="icon" title="新手引导" aria-label="新手引导" aria-expanded="false" aria-controls="quick-guide"><i data-lucide="circle-help"></i></button>
+        <button id="restart-codex" class="icon" title="重启 Codex App" aria-label="重启 Codex App" hidden><i data-lucide="rotate-cw"></i></button>
+        <button id="settings" class="icon" title="设置" aria-label="设置"><i data-lucide="settings"></i></button>
+        <button id="refresh-all" class="icon" title="刷新用量" aria-label="刷新用量"><i data-lucide="refresh-cw"></i></button>
+        <button id="add" class="primary"><i data-lucide="plus"></i><span>添加 API</span></button>
+      </div>
+    </header>
+    <section id="quick-guide" class="quick-guide" aria-label="新手引导" hidden>
+      <div class="guide-heading"><span class="guide-label">快速开始</span><span id="guide-progress"></span><button id="close-guide" class="icon" title="退出教程" aria-label="退出教程"><i data-lucide="x"></i></button></div>
+      <ol class="guide-steps" aria-label="教程进度"><li aria-label="添加"><span></span></li><li aria-label="切换"><span></span></li><li aria-label="重启"><span></span></li></ol>
+      <h2 id="guide-title">添加 API</h2>
+      <p id="guide-status" role="status" aria-live="polite"></p>
+      <details class="guide-tips"><summary>使用提示</summary><p>换 API 后重启；CLI 需重新打开。</p><p>换电脑时复制 EXE 和完整 data 文件夹。</p><p>导出文件包含 Key，仅分享给可信的人。</p></details>
+      <div class="guide-actions"><button id="guide-add" class="primary"><i data-lucide="plus"></i>添加 API</button><button id="guide-cli-done" hidden>已重新打开</button><button id="guide-done" class="plain">退出教程</button></div>
+    </section>
+    <section class="current" aria-label="当前配置">
+      <div><span class="eyebrow">当前 API</span><div id="current-name" class="current-name">读取中...</div><div id="current-url" class="mono"></div></div>
+      <div id="current-model" class="mono"></div>
+    </section>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section id="restart-reminder" class="restart-reminder" aria-label="重启提醒" hidden><div class="restart-card-heading"><span>配置待生效</span><button id="close-restart-reminder" class="icon" title="稍后重启" aria-label="稍后重启"><i data-lucide="x"></i></button></div><strong>重启 Codex</strong><p>重新加载配置，继续你的对话。</p><div class="restart-card-actions"><button id="restart-now" class="primary"><i data-lucide="rotate-cw"></i>立即重启</button><button id="restart-later" class="plain">稍后</button></div></section>
+    <div id="conflicts" class="notice warning" hidden></div>
+    <section class="list-section" aria-label="API 列表">
+      <div class="list-heading"><h2>API <span id="count"></span></h2><div class="secondary-actions"><button id="import-file" class="icon" title="导入配置文件" aria-label="导入配置文件"><i data-lucide="folder-input"></i></button><button id="export-file" class="icon" title="导出 API" aria-label="导出 API"><i data-lucide="folder-output"></i></button><button id="import" class="icon" title="导入当前 Codex 配置" aria-label="导入当前 Codex 配置"><i data-lucide="download"></i></button><button id="restore" class="icon" title="撤销切换" aria-label="撤销切换"><i data-lucide="undo-2"></i></button></div></div>
+      <div id="profiles" class="profiles"></div>
+    </section>
+    <section class="monitor-section" aria-label="实时请求监控">
+      <div class="monitor-heading"><h2>请求监控</h2><label class="monitor-toggle" title="监控本机请求；开关后需重启 Codex，开启期间保持本工具运行。"><input type="checkbox" id="monitor-toggle"><span>开启</span></label></div>
+      <div id="monitor-body" hidden>
+        <div id="monitor-stats" class="monitor-stats"></div>
+        <details id="request-details"><summary>最近请求 <span id="request-count">0</span></summary><div class="requests-scroll"><table class="request-table"><thead><tr><th>时间</th><th>API / 模型</th><th>状态</th><th>首字节</th><th>耗时</th></tr></thead><tbody id="request-rows"></tbody></table></div></details>
+      </div>
+    </section>
+  </main>
+  <dialog id="editor">
+    <form id="profile-form">
+      <div class="dialog-heading"><h2 id="editor-title">添加 API</h2><button type="button" id="close-editor" class="icon" title="关闭"><i data-lucide="x"></i></button></div>
+      <div id="editor-guide" class="editor-guide" hidden><div><strong>1 / 3 · 添加 API</strong><p>填写四项，保存。模型以服务商支持的为准。</p></div><button id="exit-editor-guide" type="button" class="plain">退出教程</button></div>
+      <label>名称<input name="name" required maxlength="80" autocomplete="off"></label>
+      <label>API 地址<input name="url" type="url" required placeholder="https://example.com/v1" autocomplete="off"></label>
+      <label>API Key<div class="key-input"><input name="key" type="password" placeholder="填写 Key" autocomplete="new-password"><button type="button" id="toggle-key" class="icon" title="显示或隐藏密钥"><i data-lucide="eye"></i></button></div></label>
+      <label>模型<input name="model" required value="gpt-6-sol" autocomplete="off"></label>
+      <details id="profile-options" class="options"><summary>更多设置</summary><div class="options-body">
+        <label>推理档位<select name="effort"><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh" selected>XHigh</option></select></label>
+        <label>用量查询<select name="adapter"><option value="auto">自动</option><option value="newapi">New API</option><option value="sub2api">Sub2API</option><option value="none">关闭</option></select></label>
+      </div></details>
+      <div class="dialog-actions"><button type="button" id="cancel-editor">取消</button><button type="submit" class="primary"><i data-lucide="check"></i>保存</button></div>
+    </form>
+  </dialog>
+  <dialog id="delete-dialog"><form method="dialog"><h2>删除 API？</h2><p id="delete-name"></p><div class="dialog-actions"><button value="cancel">取消</button><button value="delete" class="danger">删除</button></div></form></dialog>
+  <dialog id="transfer-dialog">
+    <form id="transfer-form">
+      <div class="dialog-heading"><h2 id="transfer-title">导出 API</h2><button type="button" id="close-transfer" class="icon" title="关闭" aria-label="关闭"><i data-lucide="x"></i></button></div>
+      <div id="import-source" class="import-source" hidden><code id="import-file-name"></code><button type="button" id="choose-import-file" class="icon" title="选择其他文件" aria-label="选择其他文件"><i data-lucide="folder-input"></i></button></div>
+      <div class="transfer-heading"><label class="monitor-toggle"><input id="transfer-all" type="checkbox"><span>全选</span></label><span id="transfer-count"></span></div>
+      <div id="transfer-list" class="transfer-list"></div>
+      <p id="export-key-warning" class="transfer-warning" hidden>文件包含明文 Key</p>
+      <label id="import-duplicates" class="transfer-option" hidden>重复项<select id="duplicate-mode" title="同名且同地址视为重复。"><option value="skip">跳过</option><option value="replace">覆盖</option></select></label>
+      <div id="transfer-notice" class="notice error" role="status" hidden></div>
+      <div class="dialog-actions"><button type="button" id="cancel-transfer">取消</button><button type="submit" id="submit-transfer" class="primary"><i data-lucide="folder-output"></i><span id="transfer-command">导出</span></button></div>
+    </form>
+  </dialog>
+  <dialog id="settings-dialog">
+    <form id="settings-form">
+      <div class="dialog-heading"><h2>设置</h2><button type="button" id="close-settings" class="icon" title="关闭"><i data-lucide="x"></i></button></div>
+      <label>数据目录<div class="path-control"><input id="data-path" readonly><button type="button" data-open-dir="data" class="icon" title="打开数据目录（包含密钥）"><i data-lucide="folder-open"></i></button></div></label>
+      <div class="log-controls"><label class="monitor-toggle"><input id="logging-enabled" type="checkbox"><span>保存日志</span></label><div><button type="button" data-open-dir="logs" class="icon" title="打开日志" aria-label="打开日志"><i data-lucide="folder-open"></i></button><button type="button" id="clear-logs" class="icon" title="清空日志" aria-label="清空日志"><i data-lucide="trash-2"></i></button></div></div>
+      <div class="diagnostic-control"><div><strong>遇到问题？</strong><p>导出版本、状态和操作记录。不含 Key、地址或对话。</p></div><button id="export-diagnostics" type="button"><i data-lucide="file-down"></i>导出诊断</button></div>
+      <label>保留时间<select id="retention-days"><option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option></select></label>
+      <details id="storage-details" class="options"><summary>文件位置</summary><div class="options-body">
+      <div class="storage-path"><span>日志</span><div><code id="log-path"></code></div></div>
+      <div class="storage-path"><span>设置文件</span><div><code id="settings-path"></code><button type="button" data-open-dir="settings" class="icon" title="打开设置目录"><i data-lucide="folder-open"></i></button></div></div>
+      <div class="storage-path"><span>Codex 配置目录</span><div><code id="codex-path"></code><button type="button" data-open-dir="config" class="icon" title="打开 Codex 配置目录"><i data-lucide="folder-open"></i></button></div></div>
+      <div class="storage-path"><span>缓存</span><div><code id="cache-path"></code><button type="button" data-open-dir="cache" class="icon" title="打开缓存目录"><i data-lucide="folder-open"></i></button></div></div>
+      </div></details>
+      <div id="settings-notice" class="notice" role="status" hidden></div>
+      <div class="dialog-actions"><button type="button" id="cancel-settings">取消</button><button type="submit" id="save-settings" class="primary"><i data-lucide="check"></i>保存</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

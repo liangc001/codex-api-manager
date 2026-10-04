@@ -1,0 +1,193 @@
+const { app, BrowserWindow, ipcMain, dialog, session, shell } = require('electron');
+const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const codexRestarter = require('./restart-codex.cjs');
+
+let window;
+let manager;
+let controller;
+let storage;
+let transfer;
+let finishingQuit = false;
+let quitRequested = false;
+let restartingCodex = false;
+const htmlPath = path.join(__dirname, '..', 'public', 'index.html');
+const trustedPage = pathToFileURL(htmlPath).href;
+const executableDir = app.isPackaged ? (process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe'))) : path.join(__dirname, '..');
+const dataRoot = !app.isPackaged && process.env.CODEX_MANAGER_TEST_DATA ? process.env.CODEX_MANAGER_TEST_DATA : path.join(executableDir, 'data');
+let storageError;
+try {
+  for (const folder of ['cache', 'cache/crashes', 'logs']) fsSync.mkdirSync(path.join(dataRoot, folder), { recursive: true });
+  app.setPath('userData', path.join(dataRoot, 'cache'));
+  app.setPath('sessionData', path.join(dataRoot, 'cache'));
+  app.setPath('crashDumps', path.join(dataRoot, 'cache', 'crashes'));
+  app.setAppLogsPath(path.join(dataRoot, 'logs'));
+} catch { storageError = new Error('无法写入 EXE 旁的 data 文件夹，请把软件放到有写入权限的文件夹后重试。'); }
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) app.quit();
+else {
+  app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } });
+  app.whenReady().then(async () => {
+    if (storageError) throw storageError;
+    const { Manager } = await import('../core.mjs');
+    const overrides = app.isPackaged ? {} : {
+      ...(process.env.CODEX_MANAGER_TEST_HOME ? { codexHome: process.env.CODEX_MANAGER_TEST_HOME } : {}),
+    };
+    const { StorageSettings } = await import('../storage.mjs');
+    storage = new StorageSettings(dataRoot, { portable: true });
+    await storage.init();
+    const { portableCodec } = await import('../portable.mjs');
+    manager = new Manager({ ...overrides, dataDir: storage.settings.dataDir, codec: await portableCodec(dataRoot) });
+    manager.storage = storage;
+    await manager.init();
+    const { MonitorController } = await import('../monitor.mjs');
+    controller = new MonitorController(manager);
+    await controller.init();
+    const { TransferService } = await import('../transfer.mjs');
+    transfer = new TransferService(manager, controller.monitor);
+    await storage.record('startup');
+    // Only the trusted editor can request a saved key; general state never includes secrets.
+    ipcMain.handle('manager:request', async (event, route, data) => {
+      if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== trustedPage) {
+        return { error: '不允许外部页面访问。' };
+      }
+      try {
+        if (typeof route !== 'string' || JSON.stringify(data ?? {}).length > 32000) throw new Error('请求格式不正确。');
+        if (route === 'metrics') return controller.monitor.summary();
+        if (quitRequested) throw new Error('程序正在等待请求完成并退出。');
+        if (route === 'state') return await manager.exclusive(async () => ({ ...await controller.state(), settings: storage.state(), cacheDir: app.getPath('userData'), secretProtection: 'portable' }));
+        const input = data || {};
+        if (route === 'test-connection') {
+          const profile = manager.store.profiles.find(p => p.id === input.id);
+          if (!profile?.encryptedKey) throw new Error('请先填写此 API 的 Key。');
+          const confirmation = await dialog.showMessageBox(window, { type: 'question', title: '测试连接',
+            message: `向“${profile.name}”发送一次“你好”？`,
+            detail: `使用模型 ${profile.model}，会产生少量用量，最多等待 45 秒。测试直接请求此 API，不切换当前 Codex 配置。`,
+            buttons: ['取消', '测试'], defaultId: 0, cancelId: 0 });
+          if (confirmation.response !== 1) return { canceled: true };
+          return { ok: true, result: await manager.exclusive(async () => {
+            const current = manager.store.profiles.find(p => p.id === input.id);
+            if (current !== profile) throw new Error('此 API 已被修改，请重新测试。');
+            const result = await manager.testConnection(input.id);
+            await storage.record('operation', { operation: route, outcome: result.status, profileId: input.id,
+              status: result.httpStatus, durationMs: result.durationMs, errorKind: result.kind });
+            return result;
+          }) };
+        }
+        if (route === 'export-diagnostics') {
+          const chosen = await dialog.showSaveDialog(window, { title: '导出诊断信息（不含 Key 和对话）',
+            defaultPath: path.join(executableDir, 'codex-api-diagnostics.json'), filters: [{ name: '诊断信息', extensions: ['json'] }] });
+          if (chosen.canceled) return { canceled: true };
+          const { exportDiagnostics } = await import('../support.mjs');
+          await manager.exclusive(() => exportDiagnostics(chosen.filePath, manager, storage, controller.monitor, app.getVersion()));
+          await storage.record('operation', { operation: route, outcome: 'ok' });
+          return { ok: true };
+        }
+        if (route === 'restart-codex') {
+          if (restartingCodex) throw new Error('Codex 正在重启，请稍候。');
+          restartingCodex = true;
+          try {
+            const target = await codexRestarter.probe();
+            const confirmation = await dialog.showMessageBox(window, { type: 'question', title: '重启 Codex',
+              message: target.running ? '重启 Codex App？所有 Codex 窗口会关闭，正在进行的请求可能中断。' : 'Codex App 尚未运行，是否打开？',
+              buttons: ['取消', target.running ? '重启' : '打开'], defaultId: 0, cancelId: 0 });
+            if (confirmation.response !== 1) return { canceled: true };
+            const result = await manager.exclusive(() => codexRestarter.restart(target));
+            await storage.record('operation', { operation: 'restart-codex', outcome: 'ok' });
+            return { ok: true, result };
+          } catch (error) {
+            await storage.record('operation', { operation: 'restart-codex', outcome: 'error' });
+            throw error;
+          } finally { restartingCodex = false; }
+        }
+        if (route === 'discard-import') { transfer.discard(); return { ok: true }; }
+        if (route === 'preview-import') {
+          transfer.discard();
+          const chosen = await dialog.showOpenDialog(window, { title: '导入配置', properties: ['openFile'], filters: [{ name: 'API 配置', extensions: ['json'] }] });
+          if (chosen.canceled) return { canceled: true };
+          return { preview: await manager.exclusive(() => transfer.openFile(chosen.filePaths[0])) };
+        }
+        if (route === 'apply-import') {
+          const result = await manager.exclusive(() => transfer.apply(input));
+          await storage.record('operation', { operation: 'import', outcome: 'ok' });
+          return { ok: true, result };
+        }
+        if (route === 'export-profiles') {
+          const chosen = await dialog.showSaveDialog(window, { title: '导出配置', defaultPath: path.join(executableDir, 'codex-api-profiles.json'), filters: [{ name: 'API 配置', extensions: ['json'] }] });
+          if (chosen.canceled) return { canceled: true };
+          const result = await manager.exclusive(() => transfer.exportTo(chosen.filePath, input.ids));
+          await storage.record('operation', { operation: 'export', outcome: 'ok' });
+          return { ok: true, result };
+        }
+        if (route === 'open-directory') {
+          const folders = { data: manager.dataDir, logs: storage.logDir, config: manager.home, settings: storage.root, cache: app.getPath('userData') };
+          if (!Object.hasOwn(folders, input.kind)) throw new Error('目录类型无效。');
+          await fs.mkdir(folders[input.kind], { recursive: true });
+          if (await shell.openPath(folders[input.kind])) throw new Error('无法打开文件夹。');
+          return { ok: true };
+        }
+        if (route === 'settings') return { ok: true, result: await manager.exclusive(() => storage.update(input, manager, controller.monitor)) };
+        if (route === 'clear-logs') {
+          const result = await dialog.showMessageBox(window, { type: 'question', title: '清空日志', message: '删除当前数据目录中的所有运行日志？', buttons: ['取消', '清空日志'], defaultId: 0, cancelId: 0 });
+          if (result.response === 1) await manager.exclusive(() => storage.clearLogs());
+          return { ok: true, cleared: result.response === 1 };
+        }
+        const actions = {
+          'read-key': async () => ({ key: await manager.readKey(input.id) }),
+          save: () => controller.save(input), delete: () => controller.remove(input.id),
+          switch: () => controller.switchTo(input.id), restore: () => controller.restore(),
+          monitor: () => controller.setMonitoring(input.enabled === true),
+          import: async () => { if (!await controller.importCurrent()) throw new Error('当前 Codex 没有可导入的 API 地址和 Key。'); },
+          refresh: () => manager.refresh(input.id),
+        };
+        if (!Object.hasOwn(actions, route)) throw new Error('不存在的操作。');
+        const result = await manager.exclusive(async () => {
+          try {
+            const value = await actions[route]();
+            await storage.record('operation', { operation: route, outcome: route === 'refresh' ? value.status : 'ok', profileId: input.id });
+            return value;
+          } catch (e) { await storage.record('operation', { operation: route, outcome: 'error', profileId: input.id }); throw e; }
+        });
+        return { ok: true, result };
+      } catch (error) { return { error: error.code ? '读取或保存本地文件失败，请检查文件权限。' : error.message }; }
+    });
+    session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+    session.defaultSession.setPermissionCheckHandler(() => false);
+    window = new BrowserWindow({ width: 1040, height: 820, minWidth: 560, minHeight: 600,
+      title: 'Codex API Manager', icon: path.join(__dirname, '..', 'assets', 'icon.png'), backgroundColor: '#f4f6f5', show: false, autoHideMenuBar: true,
+      webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
+    });
+    window.removeMenu();
+    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    window.webContents.on('will-navigate', (event, url) => { if (url !== trustedPage) event.preventDefault(); });
+    window.webContents.on('will-attach-webview', event => event.preventDefault());
+    window.once('ready-to-show', () => window.show());
+    window.on('close', event => {
+      if (!finishingQuit && (controller.monitor.enabled || controller.monitor.active.size)) { event.preventDefault(); app.quit(); }
+    });
+    window.on('closed', () => { window = null; });
+    await window.loadFile(htmlPath);
+  }).catch(error => {
+    dialog.showErrorBox('Codex API Manager', error.code ? '无法启动，请检查本机数据目录的文件权限。' : error.message);
+    app.quit();
+  });
+}
+app.on('window-all-closed', () => app.quit());
+app.on('before-quit', event => {
+  if (!manager || finishingQuit) return;
+  event.preventDefault();
+  if (quitRequested) return;
+  quitRequested = true;
+  if (window) window.setTitle('Codex API 管理 · 正在等待请求完成');
+  manager.exclusive(async () => { transfer?.discard(); await controller?.monitor.shutdown(); await storage?.record('shutdown'); }).then(() => { finishingQuit = true; app.quit(); }).catch(error => {
+    quitRequested = false;
+    if (window) window.setTitle('Codex API 管理');
+    dialog.showMessageBox({ type: 'warning', title: '监控恢复失败',
+      message: '无法自动恢复 Codex 配置。可以保留加密备份并退出，之后重新启动管理工具恢复连接。',
+      buttons: ['返回', '保留备份并退出'], defaultId: 0, cancelId: 0 }).then(result => {
+      if (result.response === 1) { finishingQuit = true; app.quit(); }
+    });
+  });
+});

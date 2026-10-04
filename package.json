@@ -1,0 +1,28 @@
+{
+  "name": "codex-api-manager",
+  "version": "1.0.20",
+  "private": true,
+  "type": "module",
+  "description": "Local Windows desktop manager for Codex API profiles",
+  "author": "Codex API Manager",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "desktop": "node desktop/prepare.mjs && electron .",
+    "build:exe": "node desktop/prepare.mjs && electron-builder --win portable --x64",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": { "toml-eslint-parser": "1.0.3", "lucide": "0.468.0" },
+  "devDependencies": { "playwright": "1.56.1", "electron": "44.5.1", "electron-builder": "26.15.3" },
+  "build": {
+    "appId": "local.codex.api.manager",
+    "productName": "Codex API Manager",
+    "asar": true,
+    "electronDist": "node_modules/electron/dist",
+    "directories": { "output": "dist" },
+    "files": ["desktop/main.cjs", "desktop/preload.cjs", "desktop/restart-codex.cjs", "core.mjs", "monitor.mjs", "storage.mjs", "portable.mjs", "transfer.mjs", "support.mjs", "public/**", "assets/**", "package.json"],
+    "win": { "target": "portable", "icon": "assets/icon.ico", "signAndEditExecutable": false },
+    "compression": "normal",
+    "portable": { "artifactName": "Codex-API-Manager-${version}-Windows-x64.exe" }
+  }
+}
