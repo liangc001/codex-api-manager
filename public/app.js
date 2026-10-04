@@ -5,7 +5,12 @@ let editorGeneration = 0, editorKeyChanged = false;
 let guideInitialized = false;
 let guideStep = 0, guideProfileId = null;
 let restartNeeded = false, restartDismissed = false, restartBaseline = null;
-try { restartNeeded = localStorage.getItem('restart-needed') === '1'; restartBaseline = localStorage.getItem('restart-baseline'); } catch {}
+let restartChangedAt = 0, restartStatusBusy = false;
+try {
+  restartNeeded = localStorage.getItem('restart-needed') === '1';
+  restartBaseline = localStorage.getItem('restart-baseline');
+  restartChangedAt = Number(localStorage.getItem('restart-changed-at')) || 0;
+} catch {}
 function rememberRestartBaseline(revision) {
   if (!revision) return;
   restartBaseline = revision;
@@ -22,9 +27,28 @@ function markConnectionChange() {
 }
 function setRestartNeeded(value) {
   restartNeeded = value; restartDismissed = false;
-  try { localStorage.setItem('restart-needed', value ? '1' : '0'); } catch {}
+  restartChangedAt = value ? Date.now() : 0;
+  try {
+    localStorage.setItem('restart-needed', value ? '1' : '0');
+    localStorage.setItem('restart-changed-at', String(restartChangedAt));
+  } catch {}
+  if (!value && state) rememberRestartBaseline(state.current.connectionRevision);
   renderRestartReminder();
 }
+async function reconcileRestartReminder() {
+  if (!restartNeeded || !window.codexManager || restartStatusBusy) return;
+  // Old releases had only a sticky flag, with no evidence that a restart is still pending.
+  if (!restartChangedAt || state?.current.connectionRevision === restartBaseline) {
+    setRestartNeeded(false); return;
+  }
+  restartStatusBusy = true;
+  const checkedAt = restartChangedAt;
+  try {
+    const status = await api('codex-status');
+    if (restartChangedAt === checkedAt && (status.running === false || (Number.isFinite(status.startedAt) && status.startedAt >= checkedAt))) setRestartNeeded(false);
+  } catch {} finally { restartStatusBusy = false; }
+}
+window.addEventListener('focus', () => { if (state && !busy) reconcileRestartReminder(); });
 function errorHint(message) {
   if (/401|Key 无效|认证失败/.test(message)) return '检查 Key、服务商地址和所属分组。';
   if (/403|权限/.test(message)) return '在服务商后台检查 Key 的调用或查询权限。';
@@ -117,7 +141,9 @@ function notice(text, error = false) {
   if (!error) noticeTimer = setTimeout(() => { $('notice').hidden = true; }, 6000);
 }
 async function load() {
-  state = await api('state'); render(); renderMetrics(state.monitor);
+  state = await api('state');
+  if (!guideInitialized) await reconcileRestartReminder();
+  render(); renderMetrics(state.monitor);
   if (!restartNeeded) rememberRestartBaseline(state.current.connectionRevision);
   if (!guideInitialized) {
     guideInitialized = true;

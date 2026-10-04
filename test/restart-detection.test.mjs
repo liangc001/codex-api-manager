@@ -17,7 +17,10 @@ function Get-AppxPackage {
   if ($env:TEST_PACKAGE) { [PSCustomObject]@{ InstallLocation = $env:TEST_PACKAGE; PackageFamilyName = 'Destination.Codex'; Version = '9.0' } }
 }
 function Get-CimInstance {
-  if ($env:TEST_RUNNING) { [PSCustomObject]@{ Name = 'ChatGPT.exe'; ExecutablePath = $env:TEST_RUNNING; ProcessId = 123; ParentProcessId = 0 } }
+  if ($env:TEST_RUNNING) {
+    [PSCustomObject]@{ Name = 'ChatGPT.exe'; ExecutablePath = $env:TEST_RUNNING; ProcessId = 123; ParentProcessId = 0; CreationDate = [DateTime]::Parse('2026-01-01T00:00:00Z').ToUniversalTime() }
+    [PSCustomObject]@{ Name = 'ChatGPT.exe'; ExecutablePath = $env:TEST_RUNNING; ProcessId = 124; ParentProcessId = 123; CreationDate = [DateTime]::Parse('2026-01-01T00:01:00Z').ToUniversalTime() }
+  }
 }
 function Get-ItemProperty {
   if ($env:TEST_REGISTRY) { [PSCustomObject]@{ DisplayName = 'Codex'; InstallLocation = $env:TEST_REGISTRY } }
@@ -35,7 +38,10 @@ function Get-Item { [PSCustomObject]@{ VersionInfo = [PSCustomObject]@{ ProductN
     assert.ifError(result.error);
     const output = JSON.parse(result.stdout.replace(/^\uFEFF/, '').trim());
     if (!expected) { assert.equal(result.status, 1); assert.match(output.error, /Codex/); }
-    else { assert.equal(result.status, 0, output.error); assert.equal(output.executable, expected); assert.equal(output.running, running); }
+    else {
+      assert.equal(result.status, 0, output.error); assert.equal(output.executable, expected); assert.equal(output.running, running);
+      assert.equal(output.startedAt, running ? Date.parse('2026-01-01T00:00:00Z') : null);
+    }
   }
   const packageDir = path.join(temp, 'destination-package');
   await fs.mkdir(path.join(packageDir, 'app'), { recursive: true });

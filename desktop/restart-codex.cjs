@@ -51,7 +51,13 @@ try {
   $target = Find-Codex
   $processes = @(Find-Processes $target.executable)
   if ($inputData.action -eq 'probe') {
-    @{ executable = $target.executable; running = $processes.Count -gt 0 } | ConvertTo-Json -Compress
+    $roots = @($processes | Where-Object { $_.ParentProcessId -notin $processes.ProcessId })
+    $startedAt = $null
+    if ($roots.Count -gt 0) {
+      $started = ($roots | Sort-Object CreationDate | Select-Object -First 1).CreationDate
+      if ($started) { $startedAt = ([DateTimeOffset]$started.ToUniversalTime()).ToUnixTimeMilliseconds() }
+    }
+    @{ executable = $target.executable; running = $processes.Count -gt 0; startedAt = $startedAt } | ConvertTo-Json -Compress
     exit 0
   }
   if ($inputData.action -ne 'restart' -or $target.executable -ne $inputData.expectedExecutable) { throw 'Codex 安装位置发生变化，请重新点击重启。' }

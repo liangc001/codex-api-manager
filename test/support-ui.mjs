@@ -15,7 +15,7 @@ try {
   await page.waitForFunction(() => document.querySelector('#count').textContent === '0');
   await page.locator('#close-guide').click();
   await app.evaluate(({ app, dialog }, output) => {
-    app.supportTest = { calls: 0, response: 0, error: false, saved: false, dialogs: [], restarts: 0 };
+    app.supportTest = { calls: 0, response: 0, error: false, saved: false, dialogs: [], restarts: 0, running: true, startedAt: 1 };
     dialog.showMessageBox = async (_window, options) => { app.supportTest.dialogs.push(options); return { response: app.supportTest.response }; };
     dialog.showSaveDialog = async () => app.supportTest.saved ? { filePath: output, canceled: false } : { canceled: true };
     globalThis.fetch = async (url, opts) => {
@@ -25,9 +25,14 @@ try {
       return new Response('data: {"type":"response.output_text.delta","delta":"private-reply-never-export"}\n\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
     };
     const service = process.mainModule.require(process.mainModule.require('node:path').join(app.getAppPath(), 'desktop', 'restart-codex.cjs'));
-    service.probe = async () => ({ executable: 'C:\\fake\\Codex.exe', running: true });
+    service.probe = async () => ({ executable: 'C:\\fake\\Codex.exe', running: app.supportTest.running, startedAt: app.supportTest.startedAt });
     service.restart = async () => { app.supportTest.restarts++; return { restarted: true }; };
   }, output);
+  // Retire the old sticky flag without showing a stale reminder on startup.
+  await page.evaluate(() => { localStorage.setItem('restart-needed', '1'); localStorage.removeItem('restart-changed-at'); });
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#count').textContent === '0' && localStorage.getItem('restart-needed') === '0');
+  assert.equal(await page.locator('#restart-reminder').isVisible(), false);
   const p = { name: 'Support QA', url: 'https://support.example/v1', model: 'qa-model', effort: 'high', adapter: 'none', key: 'support-qa-private-key' };
   assert.equal((await page.evaluate(p => window.codexManager.request('save', p), p)).ok, true);
   await page.evaluate(() => load());
@@ -119,6 +124,23 @@ try {
   await page.evaluate(p => window.codexManager.request('save', p), { ...p, id });
   await page.evaluate(() => load());
   assert.equal(await page.locator('.connection-result').count(), 0);
+  // Manually restarting outside this tool also clears the persisted reminder.
+  await page.locator('.switch-button').click();
+  await reminder.waitFor({ state: 'visible' });
+  await app.evaluate(({ app }) => { app.supportTest.startedAt = Date.now() + 1000; });
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#count').textContent === '1' && localStorage.getItem('restart-needed') === '0');
+  assert.equal(await reminder.isVisible(), false);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#count').textContent === '1');
+  assert.equal(await reminder.isVisible(), false);
+  // An API switch while Codex is closed requires no restart reminder next launch.
+  await app.evaluate(({ app }) => { app.supportTest.running = false; });
+  await page.locator('#restore').click();
+  await reminder.waitFor({ state: 'visible' });
+  await page.reload();
+  await page.waitForFunction(() => localStorage.getItem('restart-needed') === '0');
+  assert.equal(await reminder.isVisible(), false);
   assert.deepEqual(errors, []);
   console.log('Support desktop passed: paid-test confirmation/cancel, selected API completion/errors, config unchanged by test, persistent restart reminder/cancel/success, sanitized diagnostic export/cancel, edited result invalidation, responsive cards.');
 } finally { await app.close(); await fs.rm(temp, { recursive: true, force: true }); }

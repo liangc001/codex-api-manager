@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="title desc">
+  <title id="title">Codex API Manager</title>
+  <desc id="desc">Windows portable API control panel. Multiple providers, one place. Configure, switch, restart.</desc>
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#203044" stroke-width=".6"/></pattern>
+    <linearGradient id="beam" gradientUnits="userSpaceOnUse" x1="65" x2="1135"><stop stop-color="#62f5bd"/><stop offset="1" stop-color="#54c9ff"/></linearGradient>
+  </defs>
+  <rect width="1200" height="440" rx="18" fill="#09121d"/>
+  <rect width="1200" height="440" rx="18" fill="url(#grid)" opacity=".6"/>
+  <path d="M32 32h1136v376H32z" fill="none" stroke="#2d4053"/>
+  <path d="M32 64V32h32M1136 32h32v32M32 376v32h32M1136 408h32v-32" fill="none" stroke="#62f5bd" stroke-width="2"/>
+  <g font-family="Consolas, 'Courier New', monospace">
+    <circle cx="65" cy="68" r="4" fill="#62f5bd"/>
+    <text x="80" y="74" fill="#9fb4c7" font-size="13" letter-spacing="2">LOCAL CONTROL / WINDOWS x64</text>
+    <text x="1090" y="74" fill="#62f5bd" font-size="13" text-anchor="end">PORTABLE</text>
+    <text x="64" y="154" fill="#eff7ff" font-size="55" font-weight="700" letter-spacing="-2">Codex API Manager<tspan fill="#62f5bd">_</tspan></text>
+    <text x="65" y="188" fill="#98aabd" font-size="17" letter-spacing="1">MULTIPLE PROVIDERS. ONE PLACE.</text>
+  </g>
+  <text x="65" y="238" fill="#d5e4ef" font-family="'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="24">你的 API，你的工作台。</text>
+  <text x="65" y="274" fill="#8ba2b8" font-family="'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="17">集中管理 · 一键切换 · 本机监控 · 整夹迁移</text>
+  <path d="M65 312h1070" stroke="url(#beam)" opacity=".6"/>
+  <g font-family="Consolas, 'Courier New', monospace" font-size="14">
+    <text x="65" y="357" fill="#62f5bd">01 / CONFIGURE</text><text x="390" y="357" fill="#d5e4ef">02 / SWITCH</text><text x="735" y="357" fill="#54c9ff">03 / RESTART</text>
+    <path d="M270 351h72m-8-5 8 5-8 5M600 351h72m-8-5 8 5-8 5" fill="none" stroke="#637e95"/>
+    <text x="65" y="385" fill="#647e94" font-size="11" letter-spacing="1">NO INSTALLER / NO PRESET KEYS / LOCAL DATA</text>
+  </g>
+</svg>

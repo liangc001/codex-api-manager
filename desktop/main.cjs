@@ -57,6 +57,12 @@ else {
         if (typeof route !== 'string' || JSON.stringify(data ?? {}).length > 32000) throw new Error('请求格式不正确。');
         if (route === 'metrics') return controller.monitor.summary();
         if (quitRequested) throw new Error('程序正在等待请求完成并退出。');
+        if (route === 'codex-status') {
+          try {
+            const target = await codexRestarter.probe();
+            return { running: target.running, startedAt: target.startedAt ?? null };
+          } catch { return { running: null, startedAt: null }; }
+        }
         if (route === 'state') return await manager.exclusive(async () => ({ ...await controller.state(), settings: storage.state(), cacheDir: app.getPath('userData'), secretProtection: 'portable' }));
         const input = data || {};
         if (route === 'test-connection') {
