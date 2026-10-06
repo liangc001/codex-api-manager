@@ -271,7 +271,9 @@ function renderMetrics(m) {
     const tr = el('tr');
     tr.append(el('td', 'mono', new Date(r.startedAt).toLocaleTimeString('zh-CN')));
     const provider = el('td'); provider.append(el('span', '', r.provider), el('small', 'request-model', r.model)); tr.append(provider);
-    tr.append(el('td', r.endedAt ? r.status < 300 ? 'request-ok' : 'request-error' : 'request-pending', r.endedAt ? r.label === 'cancelled' ? '已取消' : `HTTP ${r.status}` : '进行中'));
+    const statusText = r.endedAt ? r.label === 'cancelled' ? '已取消' : `HTTP ${r.status}` : '进行中';
+    const sourceNames = { upstream: '上游返回', transport: '上游连接失败', local: '本机转发失败' };
+    tr.append(el('td', r.endedAt ? r.status < 300 ? 'request-ok' : 'request-error' : 'request-pending', statusText + (r.failureSource ? ` · ${sourceNames[r.failureSource] || ''}` : '')));
     tr.append(el('td', '', milliseconds(r.firstByte)), el('td', '', milliseconds(r.duration))); $('request-rows').append(tr);
   }
   if (!m.recent.length) { const tr = el('tr'); const td = el('td', 'usage-message', '暂无请求'); td.colSpan = 5; tr.append(td); $('request-rows').append(tr); }

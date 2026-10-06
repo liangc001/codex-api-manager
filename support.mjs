@@ -115,6 +115,7 @@ const outcomes = new Set(['ok', 'error', 'unsupported', 'completed', 'cancelled'
 export function safeLogRow(row) {
   if (!['startup', 'shutdown', 'operation', 'request', 'settings', 'logs-cleared'].includes(row?.event) || !safeDate(row.time)) return null;
   const safe = { time: row.time, event: row.event };
+  if (['upstream', 'transport', 'local'].includes(row.failureSource)) safe.failureSource = row.failureSource;
   if (operations.has(row.operation)) safe.operation = row.operation;
   if (outcomes.has(row.outcome)) safe.outcome = row.outcome;
   if (safeStatus(row.status)) safe.status = row.status;

@@ -43,7 +43,9 @@ else {
     manager.storage = storage;
     await manager.init();
     const { MonitorController } = await import('../monitor.mjs');
-    controller = new MonitorController(manager);
+    const { createMonitorRequester } = require('./monitor-transport.cjs');
+    const monitorSession = session.fromPartition('codex-monitor-network');
+    controller = new MonitorController(manager, { requester: createMonitorRequester(monitorSession) });
     await controller.init();
     const { TransferService } = await import('../transfer.mjs');
     transfer = new TransferService(manager, controller.monitor);

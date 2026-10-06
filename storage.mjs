@@ -42,6 +42,7 @@ export class StorageSettings {
     // Only fixed event names and numeric/enum metadata reach disk; never serialize inputs or errors.
     if (!['startup', 'shutdown', 'operation', 'request', 'settings', 'logs-cleared'].includes(event)) return Promise.resolve();
     const row = { time: new Date().toISOString(), event };
+    if (['upstream', 'transport', 'local'].includes(details.failureSource)) row.failureSource = details.failureSource;
     if (['save', 'delete', 'switch', 'restore', 'monitor', 'import', 'export', 'refresh', 'restart-codex', 'test-connection', 'export-diagnostics'].includes(details.operation)) row.operation = details.operation;
     if (['auth', 'permission', 'model', 'limited', 'quota', 'endpoint', 'redirect', 'timeout', 'certificate', 'network', 'upstream', 'format', 'rejected'].includes(details.errorKind)) row.errorKind = details.errorKind;
     if (['ok', 'error', 'unsupported', 'completed', 'cancelled', 'network'].includes(details.outcome)) row.outcome = details.outcome;

@@ -193,7 +193,7 @@ export class RequestMonitor {
       if (status >= 200 && status < 300 && label !== 'cancelled') s.success++; else s.failed++;
       if (status === 429) s.limited++;
       if (record.firstByte != null) { s.firstByteTotal += record.firstByte; s.firstByteSamples++; }
-      this.manager.storage?.record('request', { profileId: record.profileId, status, outcome: label,
+      this.manager.storage?.record('request', { profileId: record.profileId, status, outcome: label, failureSource: record.failureSource,
         durationMs: record.endedAt - record.startedAt, firstByteMs: record.firstByte });
       if (!this.active.size) { for (const resolve of this.drainWaiters.splice(0)) resolve(); }
     };
@@ -219,18 +219,21 @@ export class RequestMonitor {
         if (done) { response.destroy(); return; }
         record.firstByte = Date.now() - record.startedAt;
         record.status = response.statusCode;
+        if (response.statusCode >= 400) record.failureSource = 'upstream';
         res.writeHead(response.statusCode, headers(response.headers));
-        response.on('error', () => { finish(502, 'network'); res.destroy(); });
-        response.on('aborted', () => { finish(502, 'network'); res.destroy(); });
+        response.on('error', () => { record.failureSource = 'transport'; finish(502, 'network'); res.destroy(); });
+        response.on('aborted', () => { record.failureSource = 'transport'; finish(502, 'network'); res.destroy(); });
         response.pipe(res);
       });
       upstream.setTimeout(20 * 60 * 1000, () => { upstream.destroy(); });
       upstream.on('error', () => {
+        if (done) return;
         record.status = 502;
+        record.failureSource = 'transport';
         if (!res.headersSent) fail(502, 'Upstream connection failed'); else { finish(502, 'network'); res.destroy(); }
       });
       upstream.end(body);
-    } catch { record.status = 502; if (!res.headersSent) fail(502, 'Local proxy failed'); else { finish(502, 'network'); res.destroy(); } }
+    } catch { record.status = 502; record.failureSource = 'local'; if (!res.headersSent) fail(502, 'Local proxy failed'); else { finish(502, 'network'); res.destroy(); } }
   }
   async shutdown() {
     await this.disable();
