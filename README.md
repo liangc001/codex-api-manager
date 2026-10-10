@@ -58,7 +58,7 @@
 
 ```text
 Codex-API-Manager/
-├── Codex-API-Manager-1.0.25-Windows-x64.exe
+├── Codex-API-Manager-1.0.26-Windows-x64.exe
 └── data/
     ├── profiles.json     # API 列表与加密 Key
     ├── secrets.key       # 便携加密密钥
@@ -70,7 +70,7 @@ Codex-API-Manager/
 
 | 场景 | 操作 |
 | :--- | :--- |
-| **升级版本** | 1.0.24 起点击“更新并重启”；旧版首次升级需手动替换 EXE，保留 `data`。 |
+| **升级版本** | 1.0.26 起点击“更新并重启”；旧版首次升级需手动替换 EXE，保留 `data`。 |
 | **换自己的电脑** | 正常关闭工具，复制 EXE 和完整 `data`。在新电脑重新切换 API 并打开 Codex。 |
 | **分享给朋友** | 只发 EXE，朋友自行添加配置。 |
 | **分享指定账号** | 使用“导出 API”选择条目；导出的 JSON 包含明文 Key。 |

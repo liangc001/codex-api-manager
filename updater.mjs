@@ -46,6 +46,7 @@ $backup = Join-Path ([IO.Path]::GetDirectoryName($jobPath)) 'previous.exe'
 $result = Join-Path ([IO.Path]::GetDirectoryName($jobPath)) 'result.json'
 $moved = $false
 try {
+  [IO.File]::WriteAllText($jobPath + '.helper-ready', [string]$PID)
   $parent = Get-Process -Id $job.pid -ErrorAction SilentlyContinue
   if ($parent) { $parent.WaitForExit() }
   if (-not (Test-Path -LiteralPath ($jobPath + '.ready'))) { exit 0 }
@@ -71,6 +72,8 @@ try {
   @{ status = 'failed'; version = $job.version } | ConvertTo-Json -Compress | Set-Content -LiteralPath $result -Encoding UTF8
 }
 `;
+
+const launcherScript = 'Option Explicit\r\nDim shell\r\nSet shell = CreateObject("WScript.Shell")\r\nshell.Run Chr(34) & shell.ExpandEnvironmentStrings("%SystemRoot%") & "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" & Chr(34) & " -NoProfile -NonInteractive -EncodedCommand " & WScript.Arguments(0), 0, False\r\n';
 
 export class Updater {
   constructor({ version, target, root, fetcher, startHelper = spawn }) {
@@ -131,12 +134,25 @@ export class Updater {
   }
   async launchInstaller() {
     if (!this.job) throw new Error('更新文件未就绪。');
-    const helper = this.startHelper('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(installScript, 'utf16le').toString('base64')], {
-      env: { ...process.env, CODEX_MANAGER_UPDATE_JOB: this.job }, windowsHide: true, detached: true, stdio: 'ignore',
+    const launcher = path.join(path.dirname(this.job), 'launcher.vbs');
+    await fs.writeFile(launcher, launcherScript, { flag: 'wx' });
+    const host = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe');
+    const helper = this.startHelper(host, ['//B', '//NoLogo', launcher, Buffer.from(installScript, 'utf16le').toString('base64')], {
+      env: { ...process.env, CODEX_MANAGER_UPDATE_JOB: this.job }, cwd: path.dirname(this.target), windowsHide: true, detached: true, stdio: 'ignore',
     });
     await new Promise((resolve, reject) => { helper.once('spawn', resolve); helper.once('error', () => reject(new Error('无法启动更新程序，请重试。'))); });
+    try {
+      const deadline = Date.now() + 10000;
+      while (true) {
+        if (await fs.readFile(this.job + '.helper-ready', 'utf8').then(value => /^[1-9]\d{0,9}$/.test(value), () => false)) break;
+        if ((helper.exitCode !== null && helper.exitCode !== 0) || helper.signalCode || Date.now() >= deadline) throw new Error('helper');
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      await fs.writeFile(this.job + '.ready', 'ready', { flag: 'wx' });
+    } catch {
+      helper.kill(); throw new Error('更新辅助程序未能就绪，旧版本已保留，请重试。');
+    }
     helper.unref();
-    await fs.writeFile(this.job + '.ready', 'ready', { flag: 'wx' });
   }
   async cleanCompleted() {
     for (const name of await fs.readdir(this.root).catch(() => [])) {
@@ -146,7 +162,7 @@ export class Updater {
       try {
         const result = JSON.parse((await fs.readFile(path.join(dir, 'result.json'), 'utf8')).replace(/^\uFEFF/, ''));
         if (result.status !== 'installed' || result.version !== this.version) continue;
-        for (const file of ['job.json', 'job.json.ready', 'app.exe', 'previous.exe', 'result.json']) await fs.rm(path.join(dir, file), { force: true });
+        for (const file of ['job.json', 'job.json.ready', 'job.json.helper-ready', 'launcher.vbs', 'app.exe', 'previous.exe', 'result.json']) await fs.rm(path.join(dir, file), { force: true });
         await fs.rmdir(dir);
       } catch {}
     }

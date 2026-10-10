@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { Updater, newerVersion, releaseAsset, installScript } from '../updater.mjs';
 
 const bytes = Buffer.from('fake-new-executable-for-test-only');
@@ -77,4 +77,38 @@ test('Windows updater waits for readiness, replaces only the EXE and restores it
       updater.version = '1.0.25'; await updater.cleanCompleted(); assert.deepEqual(await fs.readdir(updater.root), []);
     }
   }
+});
+
+test('Windows hidden update launcher acknowledges a running helper before commit', { skip: process.platform !== 'win32' }, async t => {
+  const { updater, target } = await fixture(t);
+  await updater.check(); const job = await updater.prepare();
+  let child;
+  updater.startHelper = (command, args, options) => {
+    assert.equal(options.detached, true); assert.equal(options.cwd, path.dirname(target));
+    assert.ok(path.isAbsolute(command)); assert.equal(path.basename(command), 'wscript.exe'); assert.equal(options.windowsHide, true);
+    child = spawn(command, args, options); return child;
+  };
+  try {
+    await updater.launchInstaller();
+    assert.match(await fs.readFile(job + '.helper-ready', 'utf8'), /^[1-9]\d{0,9}$/);
+    assert.equal(await fs.readFile(job + '.ready', 'utf8'), 'ready');
+    assert.equal(await fs.readFile(target, 'utf8'), 'original-executable');
+  } finally {
+    // The launcher has exited; the acknowledged helper waits for this test process.
+    // Remove the commit marker so it cannot replace the fixture when the test process exits.
+    await fs.rm(job + '.ready', { force: true });
+    const pid = Number(await fs.readFile(job + '.helper-ready', 'utf8').catch(() => 0));
+    if (pid) { try { process.kill(pid); } catch {} }
+    await new Promise(resolve => setTimeout(resolve, 200));
+    if (child && child.exitCode === null) { child.ref(); const closed = new Promise(resolve => child.once('close', resolve)); child.kill(); await closed; }
+  }
+});
+
+test('helper exit before acknowledgement prevents update commitment', async t => {
+  const { updater, target } = await fixture(t);
+  await updater.check(); const job = await updater.prepare();
+  updater.startHelper = () => spawn(process.execPath, ['-e', 'process.exit(2)'], { stdio: 'ignore' });
+  await assert.rejects(() => updater.launchInstaller(), /未能就绪/);
+  await assert.rejects(fs.access(job + '.ready'), { code: 'ENOENT' });
+  assert.equal(await fs.readFile(target, 'utf8'), 'original-executable');
 });
