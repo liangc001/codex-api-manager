@@ -223,18 +223,20 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.once('ready-to-show', () => window.show());
     window.on('close', event => {
-      if (!finishingQuit && !quitRequested && !confirmedWindowExit && controller.monitor.enabled) {
+      if (!finishingQuit && !quitRequested && !confirmedWindowExit) {
         event.preventDefault();
         if (closePrompt) return;
         closePrompt = true;
-        dialog.showMessageBox(window, { type: 'question', title: '请求监控正在运行',
-          message: '收起到托盘，保持 Codex 连接？',
-          detail: '退出会停止本地代理并恢复直连配置。已打开的 Codex 可能仍使用旧代理地址，退出后请重新打开 Codex；CLI 也需要重新打开。',
-          buttons: ['收起到托盘', '退出并恢复直连', '取消'], defaultId: 0, cancelId: 2,
+        dialog.showMessageBox(window, { type: 'question', title: '关闭窗口',
+          message: '缩小到托盘，还是退出应用？',
+          detail: controller.monitor.enabled
+            ? '请求监控正在运行。缩小到托盘会保持连接；退出会停止代理并恢复直连，之后请重新打开 Codex / CLI。'
+            : '缩小到托盘后，应用继续运行，可从托盘菜单切换 API 或打开主窗口。',
+          buttons: ['缩小到托盘', '退出应用', '取消'], defaultId: 0, cancelId: 2,
         }).then(result => {
           if (result.response === 0) window?.hide();
           else if (result.response === 1) { confirmedWindowExit = true; app.quit(); }
-        }).finally(() => { closePrompt = false; });
+        }).catch(() => {}).finally(() => { closePrompt = false; });
         return;
       }
       if (!finishingQuit && (controller.monitor.enabled || controller.monitor.active.size || ['downloading', 'installing'].includes(updater?.status.phase))) { event.preventDefault(); app.quit(); }

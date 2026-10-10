@@ -76,6 +76,20 @@ try {
   await app.evaluate(({ app }) => app.qaMenu.items.find(i => i.label === '重启 Codex').click());
   await page.waitForFunction(() => !document.body.classList.contains('busy') && document.querySelector('#restart-reminder').hidden);
   assert.equal(await app.evaluate(({ app }) => app.modelQA.restarts), 1);
+  await app.evaluate(({ app, dialog, BrowserWindow }) => {
+    dialog.showMessageBox = async (_window, options) => { app.closeQA = options; return { response: 2 }; };
+    BrowserWindow.getAllWindows()[0].close();
+  });
+  await page.waitForTimeout(150);
+  assert.deepEqual(await app.evaluate(({ app }) => app.closeQA.buttons), ['缩小到托盘', '退出应用', '取消']);
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), true);
+  await app.evaluate(({ dialog, BrowserWindow }) => {
+    dialog.showMessageBox = async () => ({ response: 0 });
+    BrowserWindow.getAllWindows()[0].close();
+  });
+  await page.waitForTimeout(150);
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
+  await app.evaluate(({ app }) => app.qaMenu.items.find(i => i.label === '打开主窗口').click());
   await page.evaluate(() => window.codexManager.request('monitor', { enabled: true }));
   await app.evaluate(({ app, dialog, BrowserWindow }) => {
     dialog.showMessageBox = async (_window, options) => { app.closeQA = options; return { response: 0 }; };
@@ -91,5 +105,13 @@ try {
   const config = await fs.readFile(path.join(temp, 'codex', 'config.toml'), 'utf8');
   assert.ok(config.includes('qa-fast'));
   assert.deepEqual(errors, []);
-  console.log('Models and tray UI passed: query/select, failure/manual input, address-key protection, stale queries, tray hide/show/switch and mocked restart');
-} finally { await app.close(); await fs.rm(temp, { recursive: true, force: true }); }
+  await page.evaluate(() => window.codexManager.request('monitor', { enabled: true }));
+  const exited = new Promise(resolve => app.process().once('exit', resolve));
+  await app.evaluate(({ dialog, BrowserWindow }) => {
+    dialog.showMessageBox = async () => ({ response: 1 });
+    BrowserWindow.getAllWindows()[0].close();
+  });
+  await exited;
+  assert.ok(!(await fs.readFile(path.join(temp, 'codex', 'config.toml'), 'utf8')).includes('127.0.0.1'));
+  console.log('Models and tray UI passed, including close choice with monitoring on/off, cancel and minimize');
+} finally { await app.close().catch(() => {}); await fs.rm(temp, { recursive: true, force: true }); }
