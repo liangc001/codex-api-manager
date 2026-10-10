@@ -17,6 +17,12 @@ let updater;
 let updateRequested = false;
 let tray;
 let closePrompt = false, confirmedWindowExit = false;
+let restartAfterShutdown = false;
+async function restartForDirectConnection() {
+  const target = await codexRestarter.probe();
+  if (target.running) await codexRestarter.restart(target);
+  await storage.record('operation', { operation: 'restart-codex', outcome: 'ok' });
+}
 function showWindow() { if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } }
 function trayAction(action, id) {
   showWindow();
@@ -37,7 +43,7 @@ function renderTray(state) {
     { label: '切换 API', submenu: groups.size ? [...groups].map(([url, submenu]) => ({ label: url.replace(/&/g, '&&'), submenu })) : [{ label: '暂无 API', enabled: false }] },
     { label: '重启 Codex', click: () => trayAction('restart') },
     { label: '收起到托盘', click: () => window?.hide() },
-    { type: 'separator' }, { label: '退出', click: () => app.quit() },
+    { type: 'separator' }, { label: '退出', click: () => { if (controller.monitor.enabled) { showWindow(); window.close(); } else app.quit(); } },
   ]));
 }
 const htmlPath = path.join(__dirname, '..', 'public', 'index.html');
@@ -112,6 +118,23 @@ else {
           renderTray(state); return state;
         });
         const input = data || {};
+        if (route === 'monitor' && input.enabled === false && controller.monitor.enabled) {
+          const choice = await dialog.showMessageBox(window, { type: 'question', title: '关闭请求监控',
+            message: '关闭监控并重启 Codex？',
+            detail: '恢复直连后，已打开的 Codex 可能仍使用旧代理地址。重启会关闭所有 Codex 窗口，正在进行的请求可能中断；CLI 需自行重新打开。',
+            buttons: ['关闭并重启 Codex', '仅关闭监控', '取消'], defaultId: 0, cancelId: 2 });
+          if (choice.response === 2) return { canceled: true };
+          return await manager.exclusive(async () => {
+            await controller.setMonitoring(false);
+            await storage.record('operation', { operation: 'monitor', outcome: 'ok' });
+            let restarted = false, restartFailed = false;
+            if (choice.response === 0) {
+              try { await restartForDirectConnection(); restarted = true; }
+              catch { restartFailed = true; await storage.record('operation', { operation: 'restart-codex', outcome: 'error' }); }
+            }
+            return { ok: true, result: { restarted, restartFailed } };
+          });
+        }
         if (route === 'hide-to-tray') { window.hide(); return { ok: true }; }
         if (route === 'list-models') return { ok: true, result: await manager.listModels(input, (url, options) => session.fromPartition('codex-model-network').fetch(url, options)) };
         if (route === 'test-connection') {
@@ -230,12 +253,14 @@ else {
         dialog.showMessageBox(window, { type: 'question', title: '关闭窗口',
           message: '缩小到托盘，还是退出应用？',
           detail: controller.monitor.enabled
-            ? '请求监控正在运行。缩小到托盘会保持连接；退出会停止代理并恢复直连，之后请重新打开 Codex / CLI。'
+            ? '缩小到托盘会保持监控运行。退出会自动关闭监控并恢复直连，随后可选择立即重启 Codex 或稍后自行重启。'
             : '缩小到托盘后，应用继续运行，可从托盘菜单切换 API 或打开主窗口。',
           buttons: ['缩小到托盘', '退出应用', '取消'], defaultId: 0, cancelId: 2,
         }).then(result => {
           if (result.response === 0) window?.hide();
-          else if (result.response === 1) { confirmedWindowExit = true; app.quit(); }
+          else if (result.response === 1) {
+            confirmedWindowExit = true; app.quit();
+          }
         }).catch(() => {}).finally(() => { closePrompt = false; });
         return;
       }
@@ -262,10 +287,27 @@ app.on('before-quit', event => {
   quitRequested = true;
   if (window) window.setTitle('Codex API 管理 · 正在等待请求完成');
   manager.exclusive(async () => {
-    transfer?.discard(); await controller?.monitor.shutdown(); await storage?.record('shutdown');
+    const wasMonitoring = controller?.monitor.enabled;
+    transfer?.discard(); await controller?.monitor.shutdown();
+    if (wasMonitoring && !updateRequested) {
+      const choice = await dialog.showMessageBox(window, { type: 'info', title: '请求监控已自动关闭',
+        message: '请求监控已自动关闭，已恢复直连配置。',
+        detail: '已打开的 Codex 可能仍使用旧代理地址，需要重启。立即重启会关闭所有 Codex 窗口；CLI 需自行重新打开。',
+        buttons: ['立即重启 Codex', '稍后自行重启'], defaultId: 0, cancelId: 1 });
+      restartAfterShutdown = choice.response === 0;
+    }
+    if (restartAfterShutdown) { await restartForDirectConnection(); restartAfterShutdown = false; }
+    await storage?.record('shutdown');
     if (updateRequested) await updater.launchInstaller();
   }).then(() => { finishingQuit = true; tray?.destroy(); app.quit(); }).catch(error => {
     quitRequested = false;
+    confirmedWindowExit = false;
+    if (restartAfterShutdown && !controller?.monitor.enabled) {
+      restartAfterShutdown = false;
+      showWindow();
+      dialog.showMessageBox(window, { type: 'warning', title: '监控已关闭', message: '已恢复直连，但重启 Codex 失败。请手动重新打开 Codex，再退出管理工具。', buttons: ['知道了'] }).catch(() => {});
+      return;
+    }
     if (updateRequested) {
       updateRequested = false;
       updater.status.phase = 'error'; updater.status.message = '暂时无法完成更新，旧版本已保留；请等待请求结束后重试。';

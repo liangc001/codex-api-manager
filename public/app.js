@@ -219,7 +219,7 @@ function render() {
     if (!p.hasKey) title.append(el('span', 'badge empty', '未填写 Key'));
     info.append(title);
     const meta = el('div', 'profile-meta'); meta.append(el('span', '', p.model), el('span', '', p.effort));
-    const concurrent = el('span', 'provider-concurrent'); concurrent.dataset.providerCount = p.id; meta.append(concurrent); info.append(meta);
+    info.append(meta);
     const actions = el('div', 'profile-actions');
     const needsSync = p.active && (state.current.needsLegacySync || state.current.needsProfileSync);
     const switcher = button('arrow-right-left', needsSync ? state.current.needsProfileSync ? '同步 API 配置' : '同步旧对话连接' : p.active ? '已配置为当前 API' : '切换到此 API', () => {
@@ -282,10 +282,6 @@ function renderMetrics(m) {
     tr.append(el('td', '', milliseconds(r.firstByte)), el('td', '', milliseconds(r.duration))); $('request-rows').append(tr);
   }
   if (!m.recent.length) { const tr = el('tr'); const td = el('td', 'usage-message', '暂无请求'); td.colSpan = 5; tr.append(td); $('request-rows').append(tr); }
-  for (const node of document.querySelectorAll('[data-provider-count]')) {
-    const stats = m.provider[node.dataset.providerCount];
-    node.textContent = hasData ? `并发 ${stats?.active || 0}` : '';
-  }
   if (m.recoveryWarning) notice(m.recoveryWarning, true);
 }
 async function openEditor(p) {
@@ -473,7 +469,14 @@ $('restore').onclick = () => run(async () => {
 });
 $('monitor-toggle').onchange = e => {
   const enabled = e.target.checked;
-  run(async () => { await api('monitor', { enabled }); markConnectionChange(); notice(enabled ? '监控已开启，请重启 Codex。' : '监控已关闭，请重启 Codex。'); });
+  run(async () => {
+    const response = await api('monitor', { enabled });
+    if (response.canceled) return;
+    markConnectionChange();
+    if (response.result?.restarted) { await load(); setRestartNeeded(false); }
+    notice(enabled ? '监控已开启，请重启 Codex。' : response.result?.restarted ? '监控已关闭，Codex 已重新加载直连配置。'
+      : response.result?.restartFailed ? '监控已关闭，但重启 Codex 失败，请手动重新打开。' : '监控已关闭，请重启 Codex；CLI 也需重新打开。', !!response.result?.restartFailed);
+  });
 };
 function settingsNotice(text, error = false) {
   $('settings-notice').textContent = text;

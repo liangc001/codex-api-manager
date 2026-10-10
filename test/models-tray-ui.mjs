@@ -98,20 +98,63 @@ try {
   await page.waitForTimeout(150);
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
   assert.equal(await app.evaluate(({ app }) => app.closeQA.defaultId), 0);
-  assert.ok(await app.evaluate(({ app }) => app.closeQA.detail.includes('重新打开 Codex')));
+  assert.ok(await app.evaluate(({ app }) => app.closeQA.detail.includes('关闭监控')));
   assert.equal((await page.evaluate(() => window.codexManager.request('metrics'))).enabled, true);
   await app.evaluate(({ app }) => app.qaMenu.items.find(i => i.label === '打开主窗口').click());
-  await page.evaluate(() => window.codexManager.request('monitor', { enabled: false }));
+  await page.evaluate(() => load());
+  assert.equal(await page.locator('[data-provider-count]').count(), 0);
+  await app.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 2 }); });
+  await page.locator('#monitor-toggle').click();
+  await page.waitForFunction(() => !document.body.classList.contains('busy'));
+  assert.equal(await page.locator('#monitor-toggle').isChecked(), true);
+  await app.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 0 }); });
+  await page.locator('#monitor-toggle').click();
+  await page.waitForFunction(() => !document.body.classList.contains('busy') && document.querySelector('#notice').textContent.includes('重新加载直连'));
+  assert.equal(await app.evaluate(({ app }) => app.modelQA.restarts), 2);
+  assert.equal(await page.locator('#restart-reminder').isVisible(), false);
+  await page.evaluate(() => window.codexManager.request('monitor', { enabled: true }));
+  await page.evaluate(() => load());
+  await app.evaluate(({ app }) => {
+    const service = process.mainModule.require(app.getAppPath() + '/desktop/restart-codex.cjs');
+    app.savedQARestart = service.restart;
+    service.restart = async () => { throw new Error('fake-private-restart-error'); };
+  });
+  await page.locator('#monitor-toggle').click();
+  await page.waitForFunction(() => !document.body.classList.contains('busy') && document.querySelector('#notice').textContent.includes('重启 Codex 失败'));
+  assert.equal(await page.locator('#monitor-toggle').isChecked(), false);
+  assert.equal(await page.locator('#restart-reminder').isVisible(), true);
+  assert.ok(!(await page.locator('#notice').textContent()).includes('fake-private'));
+  await app.evaluate(({ app }) => {
+    process.mainModule.require(app.getAppPath() + '/desktop/restart-codex.cjs').restart = app.savedQARestart;
+  });
   const config = await fs.readFile(path.join(temp, 'codex', 'config.toml'), 'utf8');
   assert.ok(config.includes('qa-fast'));
   assert.deepEqual(errors, []);
   await page.evaluate(() => window.codexManager.request('monitor', { enabled: true }));
   const exited = new Promise(resolve => app.process().once('exit', resolve));
-  await app.evaluate(({ dialog, BrowserWindow }) => {
-    dialog.showMessageBox = async () => ({ response: 1 });
+  await app.evaluate(({ app, dialog, BrowserWindow }, later) => {
+    const service = process.mainModule.require(app.getAppPath() + '/desktop/restart-codex.cjs');
+    const restart = service.restart;
+    service.restart = async target => {
+      const fs = process.mainModule.require('node:fs');
+      if (fs.readFileSync(process.env.CODEX_HOME + '/config.toml', 'utf8').includes('127.0.0.1')) throw new Error('Restart before restoring direct config');
+      fs.writeFileSync(process.env.CODEX_HOME + '/quit-restarted.txt', 'restarted');
+      return restart(target);
+    };
+    dialog.showMessageBox = async (_window, options) => {
+      if (options.title === '请求监控已自动关闭') {
+        const fs = process.mainModule.require('node:fs');
+        if (fs.readFileSync(process.env.CODEX_HOME + '/config.toml', 'utf8').includes('127.0.0.1')) throw new Error('Prompt before restoring direct config');
+        fs.writeFileSync(process.env.CODEX_HOME + '/quit-prompt.json', JSON.stringify(options));
+        return { response: later ? 1 : 0 };
+      }
+      return { response: 1 };
+    };
     BrowserWindow.getAllWindows()[0].close();
-  });
+  }, process.argv[3] === 'later');
   await exited;
   assert.ok(!(await fs.readFile(path.join(temp, 'codex', 'config.toml'), 'utf8')).includes('127.0.0.1'));
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(temp, 'codex', 'quit-prompt.json'), 'utf8')).buttons, ['立即重启 Codex', '稍后自行重启']);
+  assert.equal(await fs.access(path.join(temp, 'codex', 'quit-restarted.txt')).then(() => true, () => false), process.argv[3] !== 'later');
   console.log('Models and tray UI passed, including close choice with monitoring on/off, cancel and minimize');
 } finally { await app.close().catch(() => {}); await fs.rm(temp, { recursive: true, force: true }); }
