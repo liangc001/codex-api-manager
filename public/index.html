@@ -7,6 +7,8 @@
   <title>Codex API 管理</title>
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'">
   <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./visual-polish.css">
+  <script src="./theme.js"></script>
   <script src="./lucide.js" defer></script>
   <script src="./app.js" defer></script>
 </head>
@@ -94,6 +96,7 @@
   <dialog id="settings-dialog">
     <form id="settings-form">
       <div class="dialog-heading"><h2>设置</h2><button type="button" id="close-settings" class="icon" title="关闭"><i data-lucide="x"></i></button></div>
+      <label>外观<select id="theme-select"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></label>
       <div class="update-control"><div><strong id="update-version">软件更新</strong><p id="update-status-text" role="status">检查 GitHub 发布版本</p></div><button id="check-update" type="button">检查更新</button></div>
       <label class="monitor-toggle"><input id="auto-updates" type="checkbox"><span>自动检查更新</span></label>
       <label>数据目录<div class="path-control"><input id="data-path" readonly><button type="button" data-open-dir="data" class="icon" title="打开数据目录（包含密钥）"><i data-lucide="folder-open"></i></button></div></label>

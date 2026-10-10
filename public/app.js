@@ -194,6 +194,7 @@ function renderUsage(p) {
   const refresh = button('refresh-cw', '刷新此 API 用量', () => refreshOne(p)); refresh.disabled = !p.hasKey || p.adapter === 'none'; right.append(refresh); row.append(right); return row;
 }
 function render() {
+  if (state.settings && !$('settings-dialog').open) window.managerTheme.apply(state.settings.theme, true);
   const active = state.profiles.find(p => p.active);
   $('current-name').textContent = active?.name || (state.current.url ? 'Codex 当前连接' : '尚未配置');
   $('current-url').textContent = state.current.url || '—'; $('current-model').textContent = state.current.model || '';
@@ -512,6 +513,7 @@ function renderSettings() {
   $('data-path').value = s.dataDir; $('data-path').title = s.dataDir;
   $('logging-enabled').checked = s.logging;
   $('auto-updates').checked = s.autoUpdates !== false;
+  $('theme-select').value = s.theme || 'light';
   $('retention-days').value = s.retentionDays;
   $('retention-days').disabled = !s.logging;
   $('log-path').textContent = s.logDir;
@@ -522,6 +524,8 @@ function renderSettings() {
 }
 $('settings').onclick = async () => { if (busy || !state.settings) return; try { await load(); renderSettings(); $('storage-details').open = false; $('settings-dialog').showModal(); icons(); } catch (e) { notice(e.message, true); } };
 $('close-settings').onclick = $('cancel-settings').onclick = () => $('settings-dialog').close();
+$('theme-select').onchange = () => window.managerTheme.apply($('theme-select').value);
+$('settings-dialog').addEventListener('close', () => window.managerTheme.apply(state.settings?.theme, true));
 for (const b of document.querySelectorAll('[data-open-dir]')) b.onclick = async () => {
   try { await api('open-directory', { kind: b.dataset.openDir }); } catch (e) { settingsNotice(e.message, true); }
 };
@@ -534,8 +538,9 @@ $('settings-form').onsubmit = async e => {
   e.preventDefault(); if (busy) return;
   busy = true; $('settings-form').setAttribute('aria-busy', 'true');
   try {
-    await api('settings', { dataDir: $('data-path').value, logging: $('logging-enabled').checked, retentionDays: Number($('retention-days').value), autoUpdates: $('auto-updates').checked });
+    await api('settings', { dataDir: $('data-path').value, logging: $('logging-enabled').checked, retentionDays: Number($('retention-days').value), autoUpdates: $('auto-updates').checked, theme: $('theme-select').value });
     await load(); renderSettings();
+    window.managerTheme.apply(state.settings.theme, true);
     settingsNotice('已保存');
   } catch (e) { settingsNotice(e.message, true); }
   finally { busy = false; $('settings-form').removeAttribute('aria-busy'); }
