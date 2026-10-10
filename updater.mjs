@@ -18,10 +18,10 @@ export function releaseAsset(raw, current) {
   const version = raw.tag_name.replace(/^v/, '');
   if (!/^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(version)) throw new Error('发布版本格式无效。');
   if (!newerVersion(version, current)) return null;
-  const name = `Codex-API-Manager-${version}-Windows-x64.exe`;
-  const asset = raw.assets?.find(a => a.name === name && a.state === 'uploaded');
+  const names = ['Codex-API-Manager.exe', `Codex-API-Manager-${version}-Windows-x64.exe`];
+  const asset = names.map(name => raw.assets?.find(a => a.name === name && a.state === 'uploaded')).find(Boolean);
   if (!asset || !Number.isSafeInteger(asset.size) || asset.size < 1 || asset.size > MAX
-    || asset.browser_download_url !== `${PREFIX}${raw.tag_name}/${name}` || !/^sha256:[a-f0-9]{64}$/.test(asset.digest || '')) {
+    || asset.browser_download_url !== `${PREFIX}${raw.tag_name}/${asset.name}` || !/^sha256:[a-f0-9]{64}$/.test(asset.digest || '')) {
     throw new Error('新版缺少有效的安装文件或 SHA256 校验信息。');
   }
   return { version, url: asset.browser_download_url, size: asset.size, digest: asset.digest.slice(7) };

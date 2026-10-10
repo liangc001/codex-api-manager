@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 
-const source = path.resolve(process.argv[2] || 'dist/Codex-API-Manager-1.0.26-Windows-x64.exe');
+const source = path.resolve(process.argv[2] || 'dist/Codex-API-Manager.exe');
 const replacement = path.resolve(process.argv[3] || 'dist/Codex-API-Manager-1.0.25-Windows-x64.exe');
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'manager portable update & quote-'));
 const target = path.join(temp, "renamed manager's app.exe");

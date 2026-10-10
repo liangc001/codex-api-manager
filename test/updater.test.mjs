@@ -9,8 +9,8 @@ import { Updater, newerVersion, releaseAsset, installScript } from '../updater.m
 
 const bytes = Buffer.from('fake-new-executable-for-test-only');
 const digest = crypto.createHash('sha256').update(bytes).digest('hex');
-const release = { tag_name: 'v1.0.25', assets: [{ name: 'Codex-API-Manager-1.0.25-Windows-x64.exe', state: 'uploaded', size: bytes.length,
-  browser_download_url: 'https://github.com/liangc001/codex-api-manager/releases/download/v1.0.25/Codex-API-Manager-1.0.25-Windows-x64.exe', digest: 'sha256:' + digest }] };
+const release = { tag_name: 'v1.0.25', assets: [{ name: 'Codex-API-Manager.exe', state: 'uploaded', size: bytes.length,
+  browser_download_url: 'https://github.com/liangc001/codex-api-manager/releases/download/v1.0.25/Codex-API-Manager.exe', digest: 'sha256:' + digest }] };
 
 async function fixture(t, response = () => new Response(bytes)) {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'manager updater & quote-'));
@@ -32,6 +32,9 @@ test('updates compare numeric stable versions and reject wrong assets, URLs and 
     assert.throws(() => releaseAsset({ ...release, assets: [{ ...release.assets[0], ...field }] }, '1.0.24'));
   }
   assert.throws(() => releaseAsset({ ...release, prerelease: true }, '1.0.24'));
+  const legacy = { ...release.assets[0], name: 'Codex-API-Manager-1.0.25-Windows-x64.exe', browser_download_url: 'https://github.com/liangc001/codex-api-manager/releases/download/v1.0.25/Codex-API-Manager-1.0.25-Windows-x64.exe' };
+  assert.equal(releaseAsset({ ...release, assets: [legacy] }, '1.0.24').url, legacy.browser_download_url);
+  assert.equal(releaseAsset({ ...release, assets: [legacy, release.assets[0]] }, '1.0.24').url, release.assets[0].browser_download_url);
 });
 test('update downloads are authenticated by release digest and never change the executable or personal data before exit', async t => {
   const { updater, target, data, requests } = await fixture(t);

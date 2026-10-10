@@ -6,7 +6,7 @@
 
 下载 EXE，放到有写入权限的文件夹后双击。首次启动进入操作教程，自行添加 API。软件不附带任何服务商 Key 或个人配置。
 
-Windows 10/11 x64 便携桌面工具。双击 `Codex-API-Manager-1.0.27-Windows-x64.exe`，无需安装 Node.js 或打开浏览器。软件配置、日志、备份和缓存全部保存在 EXE 旁的 `data` 文件夹。首次启动 API 列表为空，不预置服务商，不自动导入本机密钥。
+Windows 10/11 x64 便携桌面工具。双击 `Codex-API-Manager.exe`，无需安装 Node.js 或打开浏览器。软件配置、日志、备份和缓存全部保存在 EXE 旁的 `data` 文件夹。首次启动 API 列表为空，不预置服务商，不自动导入本机密钥。
 
 ## 便携使用
 
@@ -14,7 +14,7 @@ Windows 10/11 x64 便携桌面工具。双击 `Codex-API-Manager-1.0.27-Windows-
 
 ```text
 我的工具/
-  Codex-API-Manager-1.0.27-Windows-x64.exe
+  Codex-API-Manager.exe
   data/
     settings.json
     profiles.json
@@ -75,6 +75,8 @@ API 列表右上角提供“导入配置文件”和“导出 API”图标，悬
 **Codex 自己的配置与聊天记录由 Codex 管理，仍在 `%USERPROFILE%\.codex` 或 `CODEX_HOME` 指定的目录。** 本工具不会搬走 Codex 的整个数据目录。切换时写入该电脑的 `config.toml` 和 `auth.json`。
 
 ## 软件更新
+
+正式文件名固定为 `Codex-API-Manager.exe`，不包含版本号。真实版本在设置和更新提示中显示；一键更新保留原文件名与路径。首次改名时需同步修改快捷方式目标，之后可继续使用同一快捷方式。
 
 便携版启动后自动检查本仓库的 GitHub Releases，运行期间每 6 小时再检查一次。有新版时显示“更新并重启”；设置中可手动“检查更新”，或关闭“自动检查更新”。不会自动下载安装，也不会重启 Codex App。
 
