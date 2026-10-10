@@ -58,7 +58,7 @@
 
 ```text
 Codex-API-Manager/
-├── Codex-API-Manager-1.0.24-Windows-x64.exe
+├── Codex-API-Manager-1.0.25-Windows-x64.exe
 └── data/
     ├── profiles.json     # API 列表与加密 Key
     ├── secrets.key       # 便携加密密钥

@@ -216,8 +216,8 @@ function render() {
     const meta = el('div', 'profile-meta'); meta.append(el('span', '', p.model), el('span', '', p.effort));
     const concurrent = el('span', 'provider-concurrent'); concurrent.dataset.providerCount = p.id; meta.append(concurrent); info.append(meta);
     const actions = el('div', 'profile-actions');
-    const needsSync = p.active && state.current.needsLegacySync;
-    const switcher = button('arrow-right-left', needsSync ? '同步旧对话连接' : p.active ? '已配置为当前 API' : '切换到此 API', () => {
+    const needsSync = p.active && (state.current.needsLegacySync || state.current.needsProfileSync);
+    const switcher = button('arrow-right-left', needsSync ? state.current.needsProfileSync ? '同步 API 配置' : '同步旧对话连接' : p.active ? '已配置为当前 API' : '切换到此 API', () => {
       if (!p.hasKey) { openEditor(p); return; }
       run(async () => {
         await api('switch', { id: p.id });

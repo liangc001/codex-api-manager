@@ -215,16 +215,24 @@ export class Manager {
   async state() {
     const current = await this.current();
     const profiles = [];
+    let currentUrl;
+    try { currentUrl = normalizeUrl(current.url); } catch {}
+    const candidates = [];
     for (const p of this.store.profiles) {
       const { encryptedKey, ...safe } = p;
-      const active = current.url === p.url && current.model === p.model && current.effort === p.effort && !!encryptedKey && current.key === await this.codec.decrypt(encryptedKey);
-      profiles.push({ ...safe, hasKey: !!encryptedKey, active, connectionTest: this.connectionTests.get(p.id) });
+      let profileUrl;
+      try { profileUrl = normalizeUrl(p.url); } catch {}
+      if (currentUrl && currentUrl === profileUrl && encryptedKey && current.key && current.key === await this.codec.decrypt(encryptedKey)) candidates.push(p);
+      profiles.push({ ...safe, hasKey: !!encryptedKey, active: false, connectionTest: this.connectionTests.get(p.id) });
     }
+    const active = candidates.find(p => current.model === p.model && current.effort === p.effort) || candidates[0];
+    for (const p of profiles) p.active = p.id === active?.id;
+    const needsProfileSync = !!active && (current.model !== active.model || current.effort !== active.effort);
     const conflicts = ['OPENAI_API_KEY', 'OPENAI_BASE_URL'].filter(k => !!process.env[k]);
     const needsLegacySync = sharedAuthProviders(current.config).some(([, p]) => p.base_url !== current.url);
     const connectionRevision = hash(JSON.stringify({ provider: current.config.model_provider, providers: current.config.model_providers,
       url: current.url, key: current.key, model: current.model, effort: current.effort }));
-    return { profiles, current: { url: current.url, model: current.model, needsLegacySync, connectionRevision }, configDir: this.home, dataDir: this.dataDir,
+    return { profiles, current: { url: current.url, model: current.model, needsLegacySync, needsProfileSync, connectionRevision }, configDir: this.home, dataDir: this.dataDir,
       canRestore: !!this.store.lastBackup && (!this.store.lastBackup.origin || this.store.lastBackup.origin === this.origin), conflicts };
   }
   async readKey(id) {
