@@ -1,6 +1,6 @@
 {
   "name": "codex-api-manager",
-  "version": "1.0.32",
+  "version": "1.0.33",
   "private": true,
   "type": "module",
   "description": "Local Windows desktop manager for Codex API profiles",

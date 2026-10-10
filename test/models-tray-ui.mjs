@@ -98,7 +98,8 @@ try {
   await page.waitForTimeout(150);
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
   assert.equal(await app.evaluate(({ app }) => app.closeQA.defaultId), 0);
-  assert.ok(await app.evaluate(({ app }) => app.closeQA.detail.includes('关闭监控')));
+  assert.equal(await app.evaluate(({ app }) => app.closeQA.message), '选择关闭方式');
+  assert.equal(await app.evaluate(({ app }) => app.closeQA.detail), undefined);
   assert.equal((await page.evaluate(() => window.codexManager.request('metrics'))).enabled, true);
   await app.evaluate(({ app }) => app.qaMenu.items.find(i => i.label === '打开主窗口').click());
   await page.evaluate(() => load());
@@ -142,7 +143,7 @@ try {
       return restart(target);
     };
     dialog.showMessageBox = async (_window, options) => {
-      if (options.title === '请求监控已自动关闭') {
+      if (options.title === '监控已自动关闭') {
         const fs = process.mainModule.require('node:fs');
         if (fs.readFileSync(process.env.CODEX_HOME + '/config.toml', 'utf8').includes('127.0.0.1')) throw new Error('Prompt before restoring direct config');
         fs.writeFileSync(process.env.CODEX_HOME + '/quit-prompt.json', JSON.stringify(options));

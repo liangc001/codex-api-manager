@@ -40,7 +40,7 @@ try {
   await button.click();
   await page.waitForFunction(() => !document.body.classList.contains('busy'));
   assert.equal(await app.evaluate(({ app }) => app.restartTest.count), 0);
-  assert.ok((await app.evaluate(({ app }) => app.restartTest.dialogs[0].message)).includes('请求可能中断'));
+  assert.ok((await app.evaluate(({ app }) => app.restartTest.dialogs[0].detail)).includes('中断请求'));
   await app.evaluate(({ app }) => { app.restartTest.response = 1; });
   await button.click();
   await page.waitForFunction(() => document.querySelector('#notice').textContent === 'Codex 已重新打开。');

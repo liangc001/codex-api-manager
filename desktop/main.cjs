@@ -121,7 +121,7 @@ else {
         if (route === 'monitor' && input.enabled === false && controller.monitor.enabled) {
           const choice = await dialog.showMessageBox(window, { type: 'question', title: '关闭请求监控',
             message: '关闭监控并重启 Codex？',
-            detail: '恢复直连后，已打开的 Codex 可能仍使用旧代理地址。重启会关闭所有 Codex 窗口，正在进行的请求可能中断；CLI 需自行重新打开。',
+            detail: '重启会关闭 Codex 窗口并中断请求；CLI 需自行重启。',
             buttons: ['关闭并重启 Codex', '仅关闭监控', '取消'], defaultId: 0, cancelId: 2 });
           if (choice.response === 2) return { canceled: true };
           return await manager.exclusive(async () => {
@@ -142,7 +142,7 @@ else {
           if (!profile?.encryptedKey) throw new Error('请先填写此 API 的 Key。');
           const confirmation = await dialog.showMessageBox(window, { type: 'question', title: '测试连接',
             message: `向“${profile.name}”发送一次“你好”？`,
-            detail: `使用模型 ${profile.model}，会产生少量用量，最多等待 45 秒。测试直接请求此 API，不切换当前 Codex 配置。`,
+            detail: `模型：${profile.model} · 会产生少量用量`,
             buttons: ['取消', '测试'], defaultId: 0, cancelId: 0 });
           if (confirmation.response !== 1) return { canceled: true };
           return { ok: true, result: await manager.exclusive(async () => {
@@ -169,7 +169,8 @@ else {
           try {
             const target = await codexRestarter.probe();
             const confirmation = await dialog.showMessageBox(window, { type: 'question', title: '重启 Codex',
-              message: target.running ? '重启 Codex App？所有 Codex 窗口会关闭，正在进行的请求可能中断。' : 'Codex App 尚未运行，是否打开？',
+              message: target.running ? '重启 Codex？' : '打开 Codex？',
+              detail: target.running ? '将关闭所有窗口并中断请求。' : '',
               buttons: ['取消', target.running ? '重启' : '打开'], defaultId: 0, cancelId: 0 });
             if (confirmation.response !== 1) return { canceled: true };
             const result = await manager.exclusive(() => codexRestarter.restart(target));
@@ -251,10 +252,7 @@ else {
         if (closePrompt) return;
         closePrompt = true;
         dialog.showMessageBox(window, { type: 'question', title: '关闭窗口',
-          message: '缩小到托盘，还是退出应用？',
-          detail: controller.monitor.enabled
-            ? '缩小到托盘会保持监控运行。退出会自动关闭监控并恢复直连，随后可选择立即重启 Codex 或稍后自行重启。'
-            : '缩小到托盘后，应用继续运行，可从托盘菜单切换 API 或打开主窗口。',
+          message: '选择关闭方式',
           buttons: ['缩小到托盘', '退出应用', '取消'], defaultId: 0, cancelId: 2,
         }).then(result => {
           if (result.response === 0) window?.hide();
@@ -290,9 +288,9 @@ app.on('before-quit', event => {
     const wasMonitoring = controller?.monitor.enabled;
     transfer?.discard(); await controller?.monitor.shutdown();
     if (wasMonitoring && !updateRequested) {
-      const choice = await dialog.showMessageBox(window, { type: 'info', title: '请求监控已自动关闭',
-        message: '请求监控已自动关闭，已恢复直连配置。',
-        detail: '已打开的 Codex 可能仍使用旧代理地址，需要重启。立即重启会关闭所有 Codex 窗口；CLI 需自行重新打开。',
+      const choice = await dialog.showMessageBox(window, { type: 'info', title: '监控已自动关闭',
+        message: '重启 Codex 使配置生效？',
+        detail: '重启会关闭 Codex 窗口；CLI 需自行重启。',
         buttons: ['立即重启 Codex', '稍后自行重启'], defaultId: 0, cancelId: 1 });
       restartAfterShutdown = choice.response === 0;
     }
@@ -305,7 +303,7 @@ app.on('before-quit', event => {
     if (restartAfterShutdown && !controller?.monitor.enabled) {
       restartAfterShutdown = false;
       showWindow();
-      dialog.showMessageBox(window, { type: 'warning', title: '监控已关闭', message: '已恢复直连，但重启 Codex 失败。请手动重新打开 Codex，再退出管理工具。', buttons: ['知道了'] }).catch(() => {});
+      dialog.showMessageBox(window, { type: 'warning', title: '监控已关闭', message: 'Codex 重启失败，请手动重启。', buttons: ['知道了'] }).catch(() => {});
       return;
     }
     if (updateRequested) {
@@ -316,7 +314,7 @@ app.on('before-quit', event => {
     }
     if (window) window.setTitle('Codex API 管理');
     dialog.showMessageBox({ type: 'warning', title: '监控恢复失败',
-      message: '无法自动恢复 Codex 配置。可以保留加密备份并退出，之后重新启动管理工具恢复连接。',
+      message: '配置恢复失败。保留备份退出后，可重新打开工具重试。',
       buttons: ['返回', '保留备份并退出'], defaultId: 0, cancelId: 0 }).then(result => {
       if (result.response === 1) { finishingQuit = true; app.quit(); }
     });
