@@ -78,6 +78,14 @@
       <div class="dialog-actions"><button type="button" id="cancel-transfer">取消</button><button type="submit" id="submit-transfer" class="primary"><i data-lucide="folder-output"></i><span id="transfer-command">导出</span></button></div>
     </form>
   </dialog>
+  <dialog id="usage-dialog" aria-labelledby="usage-title">
+    <form id="usage-form">
+      <div class="dialog-heading"><h2 id="usage-title">刷新用量</h2><button type="button" id="close-usage" class="icon" aria-label="关闭"><i data-lucide="x"></i></button></div>
+      <div class="transfer-heading"><label class="monitor-toggle"><input id="usage-all" type="checkbox"><span>全选</span></label><button id="usage-clear" type="button" class="plain">清空</button><span id="usage-count" role="status"></span></div>
+      <div id="usage-list" class="transfer-list"></div>
+      <div class="dialog-actions"><button type="button" id="cancel-usage">取消</button><button type="submit" id="submit-usage" class="primary">刷新所选</button></div>
+    </form>
+  </dialog>
   <dialog id="settings-dialog">
     <form id="settings-form">
       <div class="dialog-heading"><h2>设置</h2><button type="button" id="close-settings" class="icon" title="关闭"><i data-lucide="x"></i></button></div>

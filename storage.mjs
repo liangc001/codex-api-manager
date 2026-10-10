@@ -32,11 +32,12 @@ export class StorageSettings {
     if (typeof input.dataDir !== 'string' || !path.isAbsolute(input.dataDir) || input.dataDir.length > 2000) throw new Error('请选择完整的本地文件夹路径。');
     if (typeof input.logging !== 'boolean' || ![7, 30, 90].includes(input.retentionDays)) throw new Error('日志设置无效。');
     if (input.autoUpdates !== undefined && typeof input.autoUpdates !== 'boolean') throw new Error('更新设置无效。');
+    if (input.usageSelection !== undefined && (!Array.isArray(input.usageSelection) || input.usageSelection.length > 5000 || input.usageSelection.some(id => typeof id !== 'string' || id.length > 100))) throw new Error('用量选择无效。');
   }
   get logDir() { return path.join(this.settings.dataDir, 'logs'); }
   state() { return { ...this.settings, portable: this.portable, settingsFile: this.settingsFile, logDir: this.logDir, warning: this.warning }; }
   async persist(settings = this.settings) {
-    const saved = this.portable ? { format: 'portable-v1', logging: settings.logging, retentionDays: settings.retentionDays, autoUpdates: settings.autoUpdates } : settings;
+    const saved = this.portable ? { format: 'portable-v1', logging: settings.logging, retentionDays: settings.retentionDays, autoUpdates: settings.autoUpdates, usageSelection: settings.usageSelection } : settings;
     await atomicWrite(this.settingsFile, JSON.stringify(saved, null, 2));
   }
   record(event, details = {}) {
@@ -94,7 +95,7 @@ export class StorageSettings {
   }
   async update(input, manager, monitor) {
     this.validate(input);
-    const next = { dataDir: path.resolve(input.dataDir), logging: input.logging, retentionDays: input.retentionDays, autoUpdates: input.autoUpdates ?? this.settings.autoUpdates ?? true };
+    const next = { dataDir: path.resolve(input.dataDir), logging: input.logging, retentionDays: input.retentionDays, autoUpdates: input.autoUpdates ?? this.settings.autoUpdates ?? true, usageSelection: input.usageSelection ?? this.settings.usageSelection };
     this.validate(next);
     await this.tail;
     let migrated = false;

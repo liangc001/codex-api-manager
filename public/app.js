@@ -358,16 +358,64 @@ $('profile-form').onsubmit = e => {
     $('profile-form').elements.key.value = ''; $('editor').close(); notice('已保存');
   });
 };
-$('refresh-all').onclick = () => run(async () => {
-  const targets = state.profiles.filter(p => p.hasKey && p.adapter !== 'none');
-  if (!targets.length) { notice('请先填写 API Key。'); return; }
+function selectedUsage() { return [...document.querySelectorAll('#usage-list input:checked:not(:disabled)')].map(input => input.dataset.id); }
+function updateUsageSelection() {
+  const total = document.querySelectorAll('#usage-list input:not(:disabled)').length, selected = selectedUsage().length;
+  $('usage-all').checked = !!total && selected === total;
+  $('usage-all').indeterminate = selected > 0 && selected < total;
+  $('usage-all').disabled = !total;
+  $('usage-count').textContent = `已选 ${selected} / ${total}`;
+  $('submit-usage').disabled = !selected;
+}
+$('refresh-all').onclick = () => {
+  if (busy) return;
+  let saved = state.settings?.usageSelection;
+  if (!state.settings) { try { saved = JSON.parse(localStorage.getItem('usage-selection')); } catch {} }
+  const selection = Array.isArray(saved) ? new Set(saved) : null;
+  $('usage-list').replaceChildren();
+  for (const p of state.profiles) {
+    const row = el('label', 'transfer-row'), checkbox = el('input');
+    checkbox.type = 'checkbox'; checkbox.dataset.id = p.id;
+    checkbox.disabled = !p.hasKey || p.adapter === 'none';
+    checkbox.checked = !checkbox.disabled && (!selection || selection.has(p.id));
+    checkbox.onchange = updateUsageSelection;
+    const info = el('div', 'transfer-info');
+    info.append(el('strong', 'transfer-name', p.name), el('span', 'mono transfer-url', p.url));
+    if (checkbox.disabled) info.append(el('span', 'transfer-key', !p.hasKey ? '未填写 Key' : '用量查询已关闭'));
+    row.append(checkbox, info); $('usage-list').append(row);
+  }
+  updateUsageSelection(); $('usage-dialog').showModal(); icons();
+};
+$('close-usage').onclick = $('cancel-usage').onclick = () => $('usage-dialog').close();
+$('usage-all').onchange = event => {
+  for (const input of document.querySelectorAll('#usage-list input:not(:disabled)')) input.checked = event.target.checked;
+  updateUsageSelection();
+};
+$('usage-clear').onclick = () => {
+  for (const input of document.querySelectorAll('#usage-list input')) input.checked = false;
+  updateUsageSelection();
+};
+$('usage-form').onsubmit = event => {
+  event.preventDefault();
+  if (busy) return;
+  const ids = selectedUsage();
+  const targets = state.profiles.filter(p => ids.includes(p.id) && p.hasKey && p.adapter !== 'none');
+  if (!targets.length) return;
+  run(async () => {
   $('refresh-all').disabled = true;
+  $('submit-usage').disabled = true;
   try {
+    if (state.settings) {
+      const s = state.settings;
+      await api('settings', { dataDir: s.dataDir, logging: s.logging, retentionDays: s.retentionDays, autoUpdates: s.autoUpdates, usageSelection: targets.map(p => p.id) });
+    } else { try { localStorage.setItem('usage-selection', JSON.stringify(targets.map(p => p.id))); } catch {} }
+    $('usage-dialog').close();
     let errors = 0;
     for (const p of targets) { notice(`正在查询 ${p.name}…`); const { result } = await api('refresh', { id: p.id }); if (result.status === 'error') errors++; await load(); }
     notice(`已刷新 ${targets.length} 个 API${errors ? `，${errors} 个查询失败。` : '。'}`, !!errors);
-  } finally { $('refresh-all').disabled = false; }
-});
+  } finally { $('refresh-all').disabled = false; updateUsageSelection(); }
+  });
+};
 $('import').onclick = () => run(async () => { await api('import', {}); notice('已导入'); });
 $('restore').onclick = () => run(async () => {
   const wasPending = restartNeeded;
