@@ -15,9 +15,9 @@ try {
   await page.locator('#close-guide').click();
   await app.evaluate(async ({ app }) => {
     const { Updater } = process.mainModule.require(app.getAppPath() + '/updater.mjs');
-    app.updateQA = { mode: 'available', installs: 0 };
+    app.updateQA = { mode: 'available', version: '1.0.28', installs: 0 };
     Updater.prototype.check = async function () {
-      this.status = { currentVersion: app.getVersion(), phase: app.updateQA.mode, latestVersion: app.updateQA.mode === 'latest' ? undefined : '1.0.25', canInstall: true, progress: 0 };
+      this.status = { currentVersion: app.getVersion(), phase: app.updateQA.mode, latestVersion: app.updateQA.mode === 'latest' ? undefined : app.updateQA.version, canInstall: true, progress: 0 };
       return this.state();
     };
     Updater.prototype.prepare = async function () {
@@ -31,19 +31,51 @@ try {
   await page.locator('#settings').click();
   await page.locator('#check-update').click();
   await page.locator('#update-banner').waitFor({ state: 'visible' });
-  assert.ok((await page.locator('#update-title').textContent()).includes('1.0.25'));
+  assert.ok((await page.locator('#update-title').textContent()).includes('1.0.28'));
   await page.locator('#auto-updates').uncheck();
   await page.locator('#save-settings').click();
   await page.waitForFunction(() => document.querySelector('#settings-notice').textContent === '已保存');
   await page.locator('#close-settings').click();
   assert.equal(JSON.parse(await fs.readFile(path.join(temp, 'data', 'settings.json'), 'utf8')).autoUpdates, false);
-  for (const width of [1040, 560, 390]) {
+  await page.locator('#update-later').click();
+  await page.evaluate(() => pollUpdate());
+  assert.equal(await page.locator('#update-banner').isVisible(), false);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#count').textContent === '0');
+  assert.equal(await page.locator('#update-banner').isVisible(), false);
+  await page.locator('#settings').click(); await page.locator('#check-update').click();
+  await page.locator('#close-settings').click();
+  assert.equal(await page.locator('#update-banner').isVisible(), true);
+  await page.locator('#close-update-reminder').click();
+  await app.evaluate(({ app }) => { app.updateQA.version = '1.0.29'; });
+  await page.evaluate(async () => { await window.codexManager.request('check-update'); await pollUpdate(); });
+  assert.equal(await page.locator('#update-banner').isVisible(), true);
+  await page.evaluate(() => startGuide());
+  assert.equal(await page.locator('#update-banner').isVisible(), false);
+  await page.locator('#close-guide').click();
+  assert.equal(await page.locator('#update-banner').isVisible(), true);
+  await page.evaluate(() => { rememberRestartBaseline('qa-before-change'); setRestartNeeded(true); });
+  await fs.mkdir('test-output', { recursive: true });
+  for (const width of [1440, 768, 560, 390]) {
     await page.setViewportSize({ width, height: 850 });
     assert.ok(await page.locator('#update-banner').evaluate(n => n.scrollWidth <= n.clientWidth));
+    assert.equal(await page.locator('#update-banner').evaluate(n => getComputedStyle(n).position), 'fixed');
+    await page.evaluate(() => layoutFloatingReminders());
+    const updateBox = await page.locator('#update-banner').boundingBox(), restartBox = await page.locator('#restart-reminder').boundingBox();
+    assert.ok(restartBox.y >= 0 && restartBox.y + restartBox.height <= updateBox.y - 10);
+    assert.ok(updateBox.x >= 0 && updateBox.x + updateBox.width <= width && updateBox.y + updateBox.height <= 850);
+    const before = await page.locator('#update-banner').boundingBox();
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    const after = await page.locator('#update-banner').boundingBox();
+    assert.ok(Math.abs(before.y - after.y) < 1);
+    await page.screenshot({ path: `test-output/update-floating-${width}.png` });
   }
+  await page.locator('#restart-later').click();
   await page.locator('#install-update').click();
   await page.waitForFunction(() => document.querySelector('#install-update').disabled);
   assert.ok((await page.locator('#update-detail').textContent()).includes('42%'));
+  assert.equal(await page.locator('#update-later').isDisabled(), true);
+  assert.equal(await page.locator('#close-update-reminder').isDisabled(), true);
   await page.waitForFunction(() => !document.querySelector('#install-update').disabled);
   assert.ok((await page.locator('#update-detail').textContent()).includes('旧版本已保留'));
   assert.equal(await app.evaluate(({ app }) => app.updateQA.installs), 1);

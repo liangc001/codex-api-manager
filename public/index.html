@@ -35,7 +35,7 @@
       <div id="current-model" class="mono"></div>
     </section>
     <div id="notice" class="notice" role="status" hidden></div>
-    <section id="update-banner" class="update-banner" aria-label="软件更新" hidden><div><strong id="update-title">有新版本</strong><p id="update-detail">保留配置，更新并重新打开。</p></div><button id="install-update" class="primary" type="button"><i data-lucide="download"></i><span>更新并重启</span></button></section>
+    <section id="update-banner" class="update-banner" aria-label="软件更新" hidden><div class="restart-card-heading"><span>软件更新</span><button id="close-update-reminder" class="icon" type="button" title="稍后更新" aria-label="稍后更新"><i data-lucide="x"></i></button></div><strong id="update-title">发现新版本</strong><p id="update-detail" role="status">保留 API 配置与 Key。</p><div class="restart-card-actions"><button id="install-update" class="primary" type="button"><i data-lucide="download"></i><span>更新并重启</span></button><button id="update-later" class="plain" type="button">稍后</button></div></section>
     <section id="restart-reminder" class="restart-reminder" aria-label="重启提醒" hidden><div class="restart-card-heading"><span>配置待生效</span><button id="close-restart-reminder" class="icon" title="稍后重启" aria-label="稍后重启"><i data-lucide="x"></i></button></div><strong>重启 Codex</strong><p>重新加载配置，继续你的对话。</p><div class="restart-card-actions"><button id="restart-now" class="primary"><i data-lucide="rotate-cw"></i>立即重启</button><button id="restart-later" class="plain">稍后</button></div></section>
     <div id="conflicts" class="notice warning" hidden></div>
     <section class="list-section" aria-label="API 列表">

@@ -6,6 +6,8 @@ let guideInitialized = false;
 let guideStep = 0, guideProfileId = null;
 let restartNeeded = false, restartDismissed = false, restartBaseline = null;
 let restartChangedAt = 0, restartStatusBusy = false;
+let updateState, updatePollBusy = false, updateDismissedVersion;
+try { updateDismissedVersion = localStorage.getItem('update-dismissed-version'); } catch {}
 try {
   restartNeeded = localStorage.getItem('restart-needed') === '1';
   restartBaseline = localStorage.getItem('restart-baseline');
@@ -20,6 +22,8 @@ function renderRestartReminder() {
   const visible = restartNeeded && !!window.codexManager && !restartDismissed && !guideStep;
   $('restart-reminder').hidden = !visible;
   document.body.classList.toggle('restart-floating-open', visible);
+  if (updateState) renderUpdate(updateState);
+  else layoutFloatingReminders();
 }
 function markConnectionChange() {
   if (!restartNeeded) rememberRestartBaseline(state.current.connectionRevision);
@@ -496,24 +500,45 @@ setInterval(async () => {
   metricsBusy = true;
   try { renderMetrics(await api('metrics')); } catch {} finally { metricsBusy = false; }
 }, 1000);
-let updateState, updatePollBusy = false;
+function layoutFloatingReminders() {
+  const updateHeight = $('update-banner').hidden ? 0 : $('update-banner').offsetHeight;
+  const restartHeight = $('restart-reminder').hidden ? 0 : $('restart-reminder').offsetHeight;
+  document.body.classList.toggle('update-floating-open', updateHeight > 0);
+  document.body.classList.toggle('notifications-open', updateHeight + restartHeight > 0);
+  document.body.style.setProperty('--update-reminder-height', `${updateHeight}px`);
+  document.body.style.setProperty('--notification-space', `${updateHeight + restartHeight + (updateHeight && restartHeight ? 12 : 0) + 48}px`);
+}
 function renderUpdate(s) {
   updateState = s;
   const updating = ['downloading', 'installing'].includes(s.phase);
-  $('update-banner').hidden = !s.latestVersion || !['available', 'downloading', 'installing', 'error'].includes(s.phase);
-  $('update-title').textContent = `新版本 ${s.latestVersion || ''}`;
+  $('update-banner').hidden = !s.latestVersion || !['available', 'downloading', 'installing', 'error'].includes(s.phase)
+    || (!updating && (updateDismissedVersion === s.latestVersion || guideStep > 0));
+  $('update-title').textContent = `发现新版本 ${s.latestVersion || ''}`;
   const status = s.phase === 'downloading' ? `正在下载 ${s.progress}%` : s.phase === 'installing' ? '等待请求结束，更新并重新打开…'
     : s.phase === 'checking' ? '正在检查…' : s.phase === 'latest' ? '已是最新版本' : s.phase === 'error' ? s.message
     : s.latestVersion ? `可更新到 ${s.latestVersion}` : '检查 GitHub 发布版本';
-  $('update-detail').textContent = updating || s.phase === 'error' ? status : '保留配置，更新并重新打开。';
+  $('update-detail').textContent = updating || s.phase === 'error' ? status : '保留 API 配置与 Key。';
   $('update-version').textContent = `当前版本 ${s.currentVersion}`;
   $('update-status-text').textContent = status;
   $('install-update').disabled = updating || !s.canInstall;
   $('install-update').querySelector('span').textContent = updating ? s.phase === 'downloading' ? `${s.progress}%` : '更新中' : '更新并重启';
   $('check-update').disabled = updating || s.phase === 'checking';
+  $('update-later').disabled = $('close-update-reminder').disabled = updating;
+  layoutFloatingReminders();
 }
+function dismissUpdate() {
+  if (!updateState || ['downloading', 'installing'].includes(updateState.phase)) return;
+  updateDismissedVersion = updateState.latestVersion;
+  try { localStorage.setItem('update-dismissed-version', updateDismissedVersion); } catch {}
+  renderUpdate(updateState);
+}
+$('update-later').onclick = $('close-update-reminder').onclick = dismissUpdate;
+new ResizeObserver(layoutFloatingReminders).observe($('update-banner'));
+new ResizeObserver(layoutFloatingReminders).observe($('restart-reminder'));
 $('check-update').onclick = async () => {
   if (!window.codexManager) return;
+  updateDismissedVersion = null;
+  try { localStorage.removeItem('update-dismissed-version'); } catch {}
   $('check-update').disabled = true;
   try { renderUpdate(await api('check-update')); } catch { $('update-status-text').textContent = '检查失败，请稍后重试。'; }
   finally { if (updateState) renderUpdate(updateState); }
