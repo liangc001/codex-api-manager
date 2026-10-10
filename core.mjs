@@ -240,6 +240,17 @@ export class Manager {
     if (!p) throw new Error('API 不存在。');
     return p.encryptedKey ? this.codec.decrypt(p.encryptedKey) : '';
   }
+  async listModels(input, fetcher) {
+    const url = normalizeUrl(input.url);
+    let key = typeof input.key === 'string' ? input.key.trim() : '';
+    if (!key && input.id) {
+      const p = this.store.profiles.find(p => p.id === input.id);
+      if (!p || normalizeUrl(p.url) !== url) throw new Error('修改地址时请重新填写 Key，避免发送原密钥。');
+      key = await this.readKey(input.id);
+    }
+    const { queryModels } = await import('./models.mjs');
+    return queryModels(url, key, fetcher);
+  }
   async save(input) {
     const name = String(input.name || '').trim();
     const model = String(input.model || '').trim();

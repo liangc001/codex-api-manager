@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, session, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, shell, Tray, Menu } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -15,6 +15,31 @@ let quitRequested = false;
 let restartingCodex = false;
 let updater;
 let updateRequested = false;
+let tray;
+let closePrompt = false, confirmedWindowExit = false;
+function showWindow() { if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } }
+function trayAction(action, id) {
+  showWindow();
+  if (!quitRequested && window && !window.webContents.isDestroyed()) window.webContents.send('manager:tray-action', { action, id });
+}
+function renderTray(state) {
+  if (!tray || tray.isDestroyed()) return;
+  const current = state.profiles.find(p => p.active);
+  tray.setToolTip('Codex API Manager' + (current ? ` · ${current.name}` : ''));
+  const groups = new Map();
+  for (const p of state.profiles) {
+    if (!groups.has(p.url)) groups.set(p.url, []);
+    groups.get(p.url).push({ label: p.name.replace(/&/g, '&&'), type: 'checkbox', checked: p.active, enabled: p.hasKey,
+      click: () => trayAction('switch', p.id) });
+  }
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '打开主窗口', click: showWindow },
+    { label: '切换 API', submenu: groups.size ? [...groups].map(([url, submenu]) => ({ label: url.replace(/&/g, '&&'), submenu })) : [{ label: '暂无 API', enabled: false }] },
+    { label: '重启 Codex', click: () => trayAction('restart') },
+    { label: '收起到托盘', click: () => window?.hide() },
+    { type: 'separator' }, { label: '退出', click: () => app.quit() },
+  ]));
+}
 const htmlPath = path.join(__dirname, '..', 'public', 'index.html');
 const trustedPage = pathToFileURL(htmlPath).href;
 const executableDir = app.isPackaged ? (process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe'))) : path.join(__dirname, '..');
@@ -82,8 +107,13 @@ else {
             return { running: target.running, startedAt: target.startedAt ?? null };
           } catch { return { running: null, startedAt: null }; }
         }
-        if (route === 'state') return await manager.exclusive(async () => ({ ...await controller.state(), settings: storage.state(), cacheDir: app.getPath('userData'), secretProtection: 'portable' }));
+        if (route === 'state') return await manager.exclusive(async () => {
+          const state = { ...await controller.state(), settings: storage.state(), cacheDir: app.getPath('userData'), secretProtection: 'portable' };
+          renderTray(state); return state;
+        });
         const input = data || {};
+        if (route === 'hide-to-tray') { window.hide(); return { ok: true }; }
+        if (route === 'list-models') return { ok: true, result: await manager.listModels(input, (url, options) => session.fromPartition('codex-model-network').fetch(url, options)) };
         if (route === 'test-connection') {
           const profile = manager.store.profiles.find(p => p.id === input.id);
           if (!profile?.encryptedKey) throw new Error('请先填写此 API 的 Key。');
@@ -185,11 +215,28 @@ else {
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
     });
     window.removeMenu();
+    tray = new Tray(path.join(__dirname, '..', 'assets', 'icon.ico'));
+    tray.on('double-click', showWindow);
+    renderTray(await controller.state());
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (event, url) => { if (url !== trustedPage) event.preventDefault(); });
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.once('ready-to-show', () => window.show());
     window.on('close', event => {
+      if (!finishingQuit && !quitRequested && !confirmedWindowExit && controller.monitor.enabled) {
+        event.preventDefault();
+        if (closePrompt) return;
+        closePrompt = true;
+        dialog.showMessageBox(window, { type: 'question', title: '请求监控正在运行',
+          message: '收起到托盘，保持 Codex 连接？',
+          detail: '退出会停止本地代理并恢复直连配置。已打开的 Codex 可能仍使用旧代理地址，退出后请重新打开 Codex；CLI 也需要重新打开。',
+          buttons: ['收起到托盘', '退出并恢复直连', '取消'], defaultId: 0, cancelId: 2,
+        }).then(result => {
+          if (result.response === 0) window?.hide();
+          else if (result.response === 1) { confirmedWindowExit = true; app.quit(); }
+        }).finally(() => { closePrompt = false; });
+        return;
+      }
       if (!finishingQuit && (controller.monitor.enabled || controller.monitor.active.size || ['downloading', 'installing'].includes(updater?.status.phase))) { event.preventDefault(); app.quit(); }
     });
     window.on('closed', () => { window = null; });
@@ -215,7 +262,7 @@ app.on('before-quit', event => {
   manager.exclusive(async () => {
     transfer?.discard(); await controller?.monitor.shutdown(); await storage?.record('shutdown');
     if (updateRequested) await updater.launchInstaller();
-  }).then(() => { finishingQuit = true; app.quit(); }).catch(error => {
+  }).then(() => { finishingQuit = true; tray?.destroy(); app.quit(); }).catch(error => {
     quitRequested = false;
     if (updateRequested) {
       updateRequested = false;

@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 let state, editingId = null, busy = false, metricsBusy = false, noticeTimer;
 let transferMode, transferPreview;
 let editorGeneration = 0, editorKeyChanged = false;
+let modelQueryGeneration = 0;
 let guideInitialized = false;
 let guideStep = 0, guideProfileId = null;
 let restartNeeded = false, restartDismissed = false, restartBaseline = null;
@@ -289,6 +290,7 @@ function renderMetrics(m) {
 }
 async function openEditor(p) {
   const generation = ++editorGeneration; editorKeyChanged = false;
+  resetModels();
   editingId = p?.id || null; const form = $('profile-form'); form.reset(); $('profile-options').open = false;
   $('editor-title').textContent = p ? '编辑 API' : '添加 API';
   for (const key of ['name', 'url', 'model', 'effort', 'adapter']) if (p) form.elements[key].value = p[key];
@@ -309,6 +311,50 @@ async function openEditor(p) {
     }
   }
 }
+function resetModels() {
+  modelQueryGeneration++;
+  $('model-picker').hidden = true;
+  $('model-list').replaceChildren(new Option('选择模型', ''));
+  $('model-notice').hidden = true;
+  $('query-models').disabled = false;
+  $('query-models').textContent = '查询模型';
+}
+for (const field of ['url', 'key']) $('profile-form').elements[field].addEventListener('input', resetModels);
+$('query-models').onclick = async () => {
+  const form = $('profile-form');
+  if (form.elements.key.disabled) return;
+  const generation = ++modelQueryGeneration, editor = editorGeneration;
+  $('query-models').disabled = true; $('query-models').textContent = '查询中…';
+  $('model-picker').hidden = true; $('model-notice').hidden = true;
+  try {
+    const { result } = await api('list-models', { id: editingId, url: form.elements.url.value, key: editingId && !editorKeyChanged ? '' : form.elements.key.value });
+    if (generation !== modelQueryGeneration || editor !== editorGeneration || !$('editor').open) return;
+    $('model-list').replaceChildren(new Option('选择模型', ''), ...result.map(id => new Option(id, id)));
+    if (result.includes(form.elements.model.value)) $('model-list').value = form.elements.model.value;
+    $('model-picker').hidden = false;
+    $('model-notice').textContent = `${result.length} 个模型 · 列表不代表均支持 Codex`; $('model-notice').className = 'model-notice'; $('model-notice').hidden = false;
+  } catch (error) {
+    if (generation !== modelQueryGeneration || editor !== editorGeneration || !$('editor').open) return;
+    $('model-notice').textContent = error.message; $('model-notice').className = 'model-notice error'; $('model-notice').hidden = false;
+  } finally {
+    if (generation === modelQueryGeneration && editor === editorGeneration) { $('query-models').disabled = false; $('query-models').textContent = '查询模型'; }
+  }
+};
+$('model-list').onchange = event => { if (event.target.value) $('profile-form').elements.model.value = event.target.value; };
+$('hide-to-tray').hidden = !window.codexManager;
+$('hide-to-tray').onclick = async () => { try { await api('hide-to-tray', {}); } catch (e) { notice(e.message, true); } };
+window.codexManager?.onTrayAction?.(async value => {
+  if (busy || document.querySelector('dialog[open]')) { notice('请先完成当前操作，再使用托盘菜单。'); return; }
+  if (value.action === 'restart') { $('restart-codex').click(); return; }
+  if (value.action === 'switch') {
+    try {
+      await load();
+      const article = [...document.querySelectorAll('.profile')].find(node => node.dataset.id === value.id);
+      const target = article?.querySelector('.switch-button');
+      if (target && !target.disabled) target.click();
+    } catch (error) { notice(error.message, true); }
+  }
+});
 async function removeProfile(p) {
   if (p.active) { notice('请先切换到其他 API，再删除当前 API。', true); return; }
   $('delete-name').textContent = p.name; $('delete-dialog').showModal();

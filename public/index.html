@@ -15,6 +15,7 @@
     <header>
       <div class="brand"><span class="brand-icon"><i data-lucide="square-terminal"></i></span><h1>Codex API</h1></div>
       <div class="toolbar">
+        <button id="hide-to-tray" class="icon" title="收起到托盘" aria-label="收起到托盘" hidden><i data-lucide="panel-bottom-close"></i></button>
         <button id="help" class="icon" title="新手引导" aria-label="新手引导" aria-expanded="false" aria-controls="quick-guide"><i data-lucide="circle-help"></i></button>
         <button id="restart-codex" class="icon" title="重启 Codex App" aria-label="重启 Codex App" hidden><i data-lucide="rotate-cw"></i></button>
         <button id="settings" class="icon" title="设置" aria-label="设置"><i data-lucide="settings"></i></button>
@@ -57,7 +58,9 @@
       <label>名称<input name="name" required maxlength="80" autocomplete="off"></label>
       <label>API 地址<input name="url" type="url" required placeholder="https://example.com/v1" autocomplete="off"></label>
       <label>API Key<div class="key-input"><input name="key" type="password" placeholder="填写 Key" autocomplete="new-password"><button type="button" id="toggle-key" class="icon" title="显示或隐藏密钥"><i data-lucide="eye"></i></button></div></label>
-      <label>模型<input name="model" required value="gpt-6-sol" autocomplete="off"></label>
+      <label>模型<div class="model-control"><input name="model" required value="gpt-6-sol" autocomplete="off"><button type="button" id="query-models">查询模型</button></div></label>
+      <div id="model-picker" class="model-picker" hidden><label>选择模型<select id="model-list"><option value="">选择模型</option></select></label></div>
+      <p id="model-notice" class="model-notice" role="status" hidden></p>
       <details id="profile-options" class="options"><summary>更多设置</summary><div class="options-body">
         <label>推理档位<select name="effort"><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh" selected>XHigh</option></select></label>
         <label>用量查询<select name="adapter"><option value="auto">自动</option><option value="newapi">New API</option><option value="sub2api">Sub2API</option><option value="none">关闭</option></select></label>
