@@ -386,6 +386,7 @@ function renderSettings() {
   const s = state.settings;
   $('data-path').value = s.dataDir; $('data-path').title = s.dataDir;
   $('logging-enabled').checked = s.logging;
+  $('auto-updates').checked = s.autoUpdates !== false;
   $('retention-days').value = s.retentionDays;
   $('retention-days').disabled = !s.logging;
   $('log-path').textContent = s.logDir;
@@ -408,7 +409,7 @@ $('settings-form').onsubmit = async e => {
   e.preventDefault(); if (busy) return;
   busy = true; $('settings-form').setAttribute('aria-busy', 'true');
   try {
-    await api('settings', { dataDir: $('data-path').value, logging: $('logging-enabled').checked, retentionDays: Number($('retention-days').value) });
+    await api('settings', { dataDir: $('data-path').value, logging: $('logging-enabled').checked, retentionDays: Number($('retention-days').value), autoUpdates: $('auto-updates').checked });
     await load(); renderSettings();
     settingsNotice('已保存');
   } catch (e) { settingsNotice(e.message, true); }
@@ -495,4 +496,39 @@ setInterval(async () => {
   metricsBusy = true;
   try { renderMetrics(await api('metrics')); } catch {} finally { metricsBusy = false; }
 }, 1000);
+let updateState, updatePollBusy = false;
+function renderUpdate(s) {
+  updateState = s;
+  const updating = ['downloading', 'installing'].includes(s.phase);
+  $('update-banner').hidden = !s.latestVersion || !['available', 'downloading', 'installing', 'error'].includes(s.phase);
+  $('update-title').textContent = `新版本 ${s.latestVersion || ''}`;
+  const status = s.phase === 'downloading' ? `正在下载 ${s.progress}%` : s.phase === 'installing' ? '等待请求结束，更新并重新打开…'
+    : s.phase === 'checking' ? '正在检查…' : s.phase === 'latest' ? '已是最新版本' : s.phase === 'error' ? s.message
+    : s.latestVersion ? `可更新到 ${s.latestVersion}` : '检查 GitHub 发布版本';
+  $('update-detail').textContent = updating || s.phase === 'error' ? status : '保留配置，更新并重新打开。';
+  $('update-version').textContent = `当前版本 ${s.currentVersion}`;
+  $('update-status-text').textContent = status;
+  $('install-update').disabled = updating || !s.canInstall;
+  $('install-update').querySelector('span').textContent = updating ? s.phase === 'downloading' ? `${s.progress}%` : '更新中' : '更新并重启';
+  $('check-update').disabled = updating || s.phase === 'checking';
+}
+$('check-update').onclick = async () => {
+  if (!window.codexManager) return;
+  $('check-update').disabled = true;
+  try { renderUpdate(await api('check-update')); } catch { $('update-status-text').textContent = '检查失败，请稍后重试。'; }
+  finally { if (updateState) renderUpdate(updateState); }
+};
+$('install-update').onclick = async () => {
+  if (busy || !updateState?.canInstall) return;
+  busy = true;
+  try { await api('install-update', {}); } catch (error) { notice(error.message, true); }
+  finally { busy = false; pollUpdate(); }
+};
+async function pollUpdate() {
+  if (!window.codexManager || updatePollBusy) return;
+  updatePollBusy = true;
+  try { renderUpdate(await api('update-status')); } catch {} finally { updatePollBusy = false; }
+}
+if (window.codexManager) { pollUpdate(); setInterval(pollUpdate, 1000); }
+else { $('check-update').closest('.update-control').hidden = true; $('auto-updates').closest('label').hidden = true; }
 icons(); load().catch(e => notice(e.message, true));

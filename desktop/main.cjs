@@ -13,6 +13,8 @@ let transfer;
 let finishingQuit = false;
 let quitRequested = false;
 let restartingCodex = false;
+let updater;
+let updateRequested = false;
 const htmlPath = path.join(__dirname, '..', 'public', 'index.html');
 const trustedPage = pathToFileURL(htmlPath).href;
 const executableDir = app.isPackaged ? (process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe'))) : path.join(__dirname, '..');
@@ -49,6 +51,12 @@ else {
     await controller.init();
     const { TransferService } = await import('../transfer.mjs');
     transfer = new TransferService(manager, controller.monitor);
+    const { Updater } = await import('../updater.mjs');
+    const updateSession = session.fromPartition('codex-update-network');
+    updater = new Updater({ version: app.getVersion(), root: path.join(dataRoot, 'cache', 'updates'),
+      target: app.isPackaged && process.env.PORTABLE_EXECUTABLE_FILE ? process.env.PORTABLE_EXECUTABLE_FILE : null,
+      fetcher: (url, options) => updateSession.fetch(url, options) });
+    await updater.cleanCompleted();
     await storage.record('startup');
     // Only the trusted editor can request a saved key; general state never includes secrets.
     ipcMain.handle('manager:request', async (event, route, data) => {
@@ -58,7 +66,16 @@ else {
       try {
         if (typeof route !== 'string' || JSON.stringify(data ?? {}).length > 32000) throw new Error('请求格式不正确。');
         if (route === 'metrics') return controller.monitor.summary();
+        if (route === 'update-status') return updater.state();
         if (quitRequested) throw new Error('程序正在等待请求完成并退出。');
+        if (route === 'check-update') return await updater.check();
+        if (['downloading', 'installing'].includes(updater.status.phase)) throw new Error('软件正在更新，请稍候。');
+        if (route === 'install-update') {
+          await updater.prepare();
+          updateRequested = true;
+          setTimeout(() => app.quit(), 250);
+          return { ok: true };
+        }
         if (route === 'codex-status') {
           try {
             const target = await codexRestarter.probe();
@@ -173,10 +190,15 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.once('ready-to-show', () => window.show());
     window.on('close', event => {
-      if (!finishingQuit && (controller.monitor.enabled || controller.monitor.active.size)) { event.preventDefault(); app.quit(); }
+      if (!finishingQuit && (controller.monitor.enabled || controller.monitor.active.size || ['downloading', 'installing'].includes(updater?.status.phase))) { event.preventDefault(); app.quit(); }
     });
     window.on('closed', () => { window = null; });
     await window.loadFile(htmlPath);
+    if (app.isPackaged && !process.env.CODEX_MANAGER_TEST_DATA) {
+      const check = () => { if (storage.settings.autoUpdates !== false && !quitRequested) updater.check().catch(() => {}); };
+      setTimeout(check, 2000).unref();
+      setInterval(check, 6 * 60 * 60 * 1000).unref();
+    }
   }).catch(error => {
     dialog.showErrorBox('Codex API Manager', error.code ? '无法启动，请检查本机数据目录的文件权限。' : error.message);
     app.quit();
@@ -186,11 +208,21 @@ app.on('window-all-closed', () => app.quit());
 app.on('before-quit', event => {
   if (!manager || finishingQuit) return;
   event.preventDefault();
+  if (updater?.status.phase === 'downloading') return;
   if (quitRequested) return;
   quitRequested = true;
   if (window) window.setTitle('Codex API 管理 · 正在等待请求完成');
-  manager.exclusive(async () => { transfer?.discard(); await controller?.monitor.shutdown(); await storage?.record('shutdown'); }).then(() => { finishingQuit = true; app.quit(); }).catch(error => {
+  manager.exclusive(async () => {
+    transfer?.discard(); await controller?.monitor.shutdown(); await storage?.record('shutdown');
+    if (updateRequested) await updater.launchInstaller();
+  }).then(() => { finishingQuit = true; app.quit(); }).catch(error => {
     quitRequested = false;
+    if (updateRequested) {
+      updateRequested = false;
+      updater.status.phase = 'error'; updater.status.message = '暂时无法完成更新，旧版本已保留；请等待请求结束后重试。';
+      if (window) window.setTitle('Codex API 管理');
+      return;
+    }
     if (window) window.setTitle('Codex API 管理');
     dialog.showMessageBox({ type: 'warning', title: '监控恢复失败',
       message: '无法自动恢复 Codex 配置。可以保留加密备份并退出，之后重新启动管理工具恢复连接。',

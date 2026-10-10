@@ -19,7 +19,7 @@ export class StorageSettings {
     let saved;
     try { saved = JSON.parse(await fs.readFile(this.settingsFile, 'utf8')); }
     catch (e) { if (e.code !== 'ENOENT') throw e; }
-    this.settings = { dataDir: this.root, logging: true, retentionDays: 30, ...saved };
+    this.settings = { dataDir: this.root, logging: true, retentionDays: 30, autoUpdates: true, ...saved };
     if (this.portable) this.settings.dataDir = this.root;
     this.validate(this.settings);
     // A disconnected custom drive must not silently create a fresh empty store.
@@ -31,11 +31,12 @@ export class StorageSettings {
   validate(input) {
     if (typeof input.dataDir !== 'string' || !path.isAbsolute(input.dataDir) || input.dataDir.length > 2000) throw new Error('请选择完整的本地文件夹路径。');
     if (typeof input.logging !== 'boolean' || ![7, 30, 90].includes(input.retentionDays)) throw new Error('日志设置无效。');
+    if (input.autoUpdates !== undefined && typeof input.autoUpdates !== 'boolean') throw new Error('更新设置无效。');
   }
   get logDir() { return path.join(this.settings.dataDir, 'logs'); }
   state() { return { ...this.settings, portable: this.portable, settingsFile: this.settingsFile, logDir: this.logDir, warning: this.warning }; }
   async persist(settings = this.settings) {
-    const saved = this.portable ? { format: 'portable-v1', logging: settings.logging, retentionDays: settings.retentionDays } : settings;
+    const saved = this.portable ? { format: 'portable-v1', logging: settings.logging, retentionDays: settings.retentionDays, autoUpdates: settings.autoUpdates } : settings;
     await atomicWrite(this.settingsFile, JSON.stringify(saved, null, 2));
   }
   record(event, details = {}) {
@@ -93,7 +94,7 @@ export class StorageSettings {
   }
   async update(input, manager, monitor) {
     this.validate(input);
-    const next = { dataDir: path.resolve(input.dataDir), logging: input.logging, retentionDays: input.retentionDays };
+    const next = { dataDir: path.resolve(input.dataDir), logging: input.logging, retentionDays: input.retentionDays, autoUpdates: input.autoUpdates ?? this.settings.autoUpdates ?? true };
     this.validate(next);
     await this.tail;
     let migrated = false;

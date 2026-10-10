@@ -35,6 +35,7 @@
       <div id="current-model" class="mono"></div>
     </section>
     <div id="notice" class="notice" role="status" hidden></div>
+    <section id="update-banner" class="update-banner" aria-label="软件更新" hidden><div><strong id="update-title">有新版本</strong><p id="update-detail">保留配置，更新并重新打开。</p></div><button id="install-update" class="primary" type="button"><i data-lucide="download"></i><span>更新并重启</span></button></section>
     <section id="restart-reminder" class="restart-reminder" aria-label="重启提醒" hidden><div class="restart-card-heading"><span>配置待生效</span><button id="close-restart-reminder" class="icon" title="稍后重启" aria-label="稍后重启"><i data-lucide="x"></i></button></div><strong>重启 Codex</strong><p>重新加载配置，继续你的对话。</p><div class="restart-card-actions"><button id="restart-now" class="primary"><i data-lucide="rotate-cw"></i>立即重启</button><button id="restart-later" class="plain">稍后</button></div></section>
     <div id="conflicts" class="notice warning" hidden></div>
     <section class="list-section" aria-label="API 列表">
@@ -80,6 +81,8 @@
   <dialog id="settings-dialog">
     <form id="settings-form">
       <div class="dialog-heading"><h2>设置</h2><button type="button" id="close-settings" class="icon" title="关闭"><i data-lucide="x"></i></button></div>
+      <div class="update-control"><div><strong id="update-version">软件更新</strong><p id="update-status-text" role="status">检查 GitHub 发布版本</p></div><button id="check-update" type="button">检查更新</button></div>
+      <label class="monitor-toggle"><input id="auto-updates" type="checkbox"><span>自动检查更新</span></label>
       <label>数据目录<div class="path-control"><input id="data-path" readonly><button type="button" data-open-dir="data" class="icon" title="打开数据目录（包含密钥）"><i data-lucide="folder-open"></i></button></div></label>
       <div class="log-controls"><label class="monitor-toggle"><input id="logging-enabled" type="checkbox"><span>保存日志</span></label><div><button type="button" data-open-dir="logs" class="icon" title="打开日志" aria-label="打开日志"><i data-lucide="folder-open"></i></button><button type="button" id="clear-logs" class="icon" title="清空日志" aria-label="清空日志"><i data-lucide="trash-2"></i></button></div></div>
       <div class="diagnostic-control"><div><strong>遇到问题？</strong><p>导出版本、状态和操作记录。不含 Key、地址或对话。</p></div><button id="export-diagnostics" type="button"><i data-lucide="file-down"></i>导出诊断</button></div>

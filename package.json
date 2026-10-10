@@ -1,6 +1,6 @@
 {
   "name": "codex-api-manager",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "private": true,
   "type": "module",
   "description": "Local Windows desktop manager for Codex API profiles",
@@ -20,7 +20,7 @@
     "asar": true,
     "electronDist": "node_modules/electron/dist",
     "directories": { "output": "dist" },
-    "files": ["desktop/main.cjs", "desktop/preload.cjs", "desktop/restart-codex.cjs", "desktop/monitor-transport.cjs", "core.mjs", "monitor.mjs", "storage.mjs", "portable.mjs", "transfer.mjs", "support.mjs", "public/**", "assets/**", "package.json"],
+    "files": ["desktop/main.cjs", "desktop/preload.cjs", "desktop/restart-codex.cjs", "desktop/monitor-transport.cjs", "core.mjs", "monitor.mjs", "storage.mjs", "portable.mjs", "transfer.mjs", "support.mjs", "updater.mjs", "public/**", "assets/**", "package.json"],
     "win": { "target": "portable", "icon": "assets/icon.ico", "signAndEditExecutable": false },
     "compression": "normal",
     "portable": { "artifactName": "Codex-API-Manager-${version}-Windows-x64.exe" }
