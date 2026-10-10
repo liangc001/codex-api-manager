@@ -32,7 +32,7 @@
       <div class="guide-actions"><button id="guide-add" class="primary"><i data-lucide="plus"></i>添加 API</button><button id="guide-cli-done" hidden>已重新打开</button><button id="guide-done" class="plain">退出教程</button></div>
     </section>
     <section class="current" aria-label="当前配置">
-      <div><span class="eyebrow">当前 API</span><div id="current-name" class="current-name">读取中...</div><div id="current-url" class="mono"></div></div>
+      <div><span class="eyebrow">当前 API</span><span id="connection-status" class="connection-status" role="status"></span><div id="current-name" class="current-name">读取中...</div><div id="current-url" class="mono"></div></div>
       <div id="current-model" class="mono"></div>
     </section>
     <div id="notice" class="notice" role="status" hidden></div>
@@ -41,6 +41,8 @@
     <div id="conflicts" class="notice warning" hidden></div>
     <section class="list-section" aria-label="API 列表">
       <div class="list-heading"><h2>API <span id="count"></span></h2><div class="secondary-actions"><button id="import-file" class="icon" title="导入配置文件" aria-label="导入配置文件"><i data-lucide="folder-input"></i></button><button id="export-file" class="icon" title="导出 API" aria-label="导出 API"><i data-lucide="folder-output"></i></button><button id="import" class="icon" title="导入当前 Codex 配置" aria-label="导入当前 Codex 配置"><i data-lucide="download"></i></button><button id="restore" class="icon" title="撤销切换" aria-label="撤销切换"><i data-lucide="undo-2"></i></button></div></div>
+      <div class="api-filters"><input id="api-search" type="search" placeholder="搜索名称、地址或模型" aria-label="搜索 API"><button id="favorites-only" type="button" aria-pressed="false"><i data-lucide="star"></i>收藏</button></div>
+      <div id="delete-undo" class="delete-undo" role="status" hidden><span id="delete-undo-text"></span><button id="undo-delete" type="button" class="plain">撤销删除</button></div>
       <div id="profiles" class="profiles"></div>
     </section>
     <section class="monitor-section" aria-label="实时请求监控">

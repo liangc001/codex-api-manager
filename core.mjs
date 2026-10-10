@@ -166,6 +166,7 @@ export class Manager {
     this.authPath = path.join(codexHome, 'auth.json');
     this.tail = Promise.resolve();
     this.connectionTests = new Map();
+    this.deletedProfiles = new Map();
   }
   exclusive(fn) {
     const next = this.tail.then(fn);
@@ -263,7 +264,7 @@ export class Manager {
     if (key && (key.length > 8192 || /[\r\n]/.test(key))) throw new Error('API Key 格式无效。');
     if (existing?.url !== url && existing?.encryptedKey && !key) throw new Error('修改地址时请重新填写 Key，避免把原密钥发送到另一家服务商。');
     const p = { id: existing?.id || crypto.randomUUID(), name, url, model, effort: input.effort, adapter: input.adapter,
-      encryptedKey: key ? await this.codec.encrypt(key) : existing?.encryptedKey || '' };
+      encryptedKey: key ? await this.codec.encrypt(key) : existing?.encryptedKey || '', favorite: existing?.favorite === true };
     const previous = this.store;
     this.store = { ...previous, profiles: existing ? previous.profiles.map(item => item === existing ? p : item) : [...previous.profiles, p] };
     try { await this.persist(); }
@@ -274,10 +275,34 @@ export class Manager {
     const state = await this.state();
     if (state.profiles.find(p => p.id === id)?.active) throw new Error('请先切换到其他 API，再删除当前 API。');
     const previous = this.store;
+    const index = previous.profiles.findIndex(p => p.id === id);
+    if (index < 0) throw new Error('API 不存在。');
     this.store = { ...previous, profiles: previous.profiles.filter(p => p.id !== id) };
     try { await this.persist(); }
     catch (error) { this.store = previous; throw error; }
     this.connectionTests.delete(id);
+    const undoToken = crypto.randomUUID(), expiresAt = Date.now() + 30000;
+    this.deletedProfiles.set(undoToken, { profile: previous.profiles[index], index, expiresAt });
+    setTimeout(() => this.deletedProfiles.delete(undoToken), 30000).unref();
+    return { undoToken, expiresAt };
+  }
+  async undoRemove(token) {
+    const deleted = this.deletedProfiles.get(token);
+    if (!deleted || deleted.expiresAt <= Date.now()) throw new Error('撤销已过期。');
+    if (this.store.profiles.some(p => p.id === deleted.profile.id)) throw new Error('此 API 已存在。');
+    const previous = this.store, profiles = [...previous.profiles];
+    profiles.splice(Math.min(deleted.index, profiles.length), 0, deleted.profile);
+    this.store = { ...previous, profiles };
+    try { await this.persist(); } catch (error) { this.store = previous; throw error; }
+    this.deletedProfiles.delete(token);
+  }
+  async setFavorite(id, favorite) {
+    if (typeof favorite !== 'boolean') throw new Error('收藏设置无效。');
+    const p = this.store.profiles.find(p => p.id === id);
+    if (!p) throw new Error('API 不存在。');
+    const previous = this.store;
+    this.store = { ...previous, profiles: previous.profiles.map(item => item === p ? { ...p, favorite } : item) };
+    try { await this.persist(); } catch (error) { this.store = previous; throw error; }
   }
   async switchTo(id) {
     const p = this.store.profiles.find(p => p.id === id);

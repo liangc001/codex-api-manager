@@ -3,6 +3,7 @@ let state, editingId = null, busy = false, metricsBusy = false, noticeTimer;
 let transferMode, transferPreview;
 let editorGeneration = 0, editorKeyChanged = false;
 let modelQueryGeneration = 0;
+let favoritesOnly = false, undoDeleteToken, undoDeleteTimer;
 let guideInitialized = false;
 let guideStep = 0, guideProfileId = null;
 let restartNeeded = false, restartDismissed = false, restartBaseline = null;
@@ -20,6 +21,11 @@ function rememberRestartBaseline(revision) {
   try { localStorage.setItem('restart-baseline', revision); } catch {}
 }
 function renderRestartReminder() {
+  if (state) {
+    const mode = state.monitor?.enabled ? '监控中' : /^http:\/\/127\.0\.0\.1[:/]/.test(state.current.url || '') ? '代理待恢复' : state.current.url ? '直连' : '未配置';
+    $('connection-status').textContent = mode + (restartNeeded ? ' · 待重启' : '');
+    $('connection-status').classList.toggle('pending', restartNeeded);
+  }
   const visible = restartNeeded && !!window.codexManager && !restartDismissed && !guideStep;
   $('restart-reminder').hidden = !visible;
   document.body.classList.toggle('restart-floating-open', visible);
@@ -202,7 +208,10 @@ function render() {
   $('conflicts').textContent = `环境变量可能覆盖连接：${state.conflicts.join('、')}`;
   $('profiles').replaceChildren();
   const groups = new Map();
-  for (const p of state.profiles) {
+  const query = $('api-search').value.trim().toLocaleLowerCase();
+  const visible = state.profiles.filter(p => (!favoritesOnly || p.favorite) && (!query || [p.name, p.url, p.model].some(value => String(value).toLocaleLowerCase().includes(query))))
+    .sort((a, b) => Number(b.favorite === true) - Number(a.favorite === true));
+  for (const p of visible) {
     const url = new URL(p.url).href.replace(/\/+$/, '');
     if (!groups.has(url)) {
       const section = el('section', 'profile-group'); section.setAttribute('aria-label', url);
@@ -235,7 +244,9 @@ function render() {
     const test = button('plug-zap', '测试连接 ' + p.name, () => testProfile(p));
     test.disabled = !p.hasKey;
     test.hidden = !window.codexManager;
-    actions.append(switcher, test, button('pencil', '编辑 ' + p.name, () => openEditor(p)), button('trash-2', '删除 ' + p.name, () => removeProfile(p)));
+    const favorite = button('star', (p.favorite ? '取消收藏 ' : '收藏 ') + p.name, () => run(async () => { await api('favorite', { id: p.id, favorite: !p.favorite }); }), undefined, 'icon favorite-button' + (p.favorite ? ' selected' : ''));
+    favorite.setAttribute('aria-pressed', String(p.favorite === true));
+    actions.append(switcher, favorite, test, button('pencil', '编辑 ' + p.name, () => openEditor(p)), button('trash-2', '删除 ' + p.name, () => removeProfile(p)));
     article.append(info, actions, renderUsage(p)); group.list.append(article);
     if (p.connectionTest) {
       const t = p.connectionTest;
@@ -248,9 +259,9 @@ function render() {
       article.append(result);
     }
   }
-  if (!state.profiles.length) {
+  if (!visible.length) {
     const empty = el('div', 'empty-state');
-    empty.append(icon('layers'), el('p', '', '暂无 API'));
+    empty.append(icon('layers'), el('p', '', state.profiles.length ? '没有匹配的 API' : '暂无 API'));
     $('profiles').append(empty);
   }
   icons();
@@ -340,10 +351,12 @@ $('model-list').onchange = event => { if (event.target.value) $('profile-form').
 $('hide-to-tray').hidden = !window.codexManager;
 $('hide-to-tray').onclick = async () => { try { await api('hide-to-tray', {}); } catch (e) { notice(e.message, true); } };
 window.codexManager?.onTrayAction?.(async value => {
+  if (value.action === 'monitor-stopped') { markConnectionChange(); await load(); return; }
   if (busy || document.querySelector('dialog[open]')) { notice('请先完成当前操作，再使用托盘菜单。'); return; }
   if (value.action === 'restart') { $('restart-codex').click(); return; }
   if (value.action === 'switch') {
     try {
+      $('api-search').value = ''; favoritesOnly = false; $('favorites-only').setAttribute('aria-pressed', 'false');
       await load();
       const article = [...document.querySelectorAll('.profile')].find(node => node.dataset.id === value.id);
       const target = article?.querySelector('.switch-button');
@@ -354,8 +367,19 @@ window.codexManager?.onTrayAction?.(async value => {
 async function removeProfile(p) {
   if (p.active) { notice('请先切换到其他 API，再删除当前 API。', true); return; }
   $('delete-name').textContent = p.name; $('delete-dialog').showModal();
-  $('delete-dialog').onclose = () => { if ($('delete-dialog').returnValue === 'delete') run(async () => { await api('delete', { id: p.id }); notice('已删除 ' + p.name); }); };
+  $('delete-dialog').onclose = () => { if ($('delete-dialog').returnValue === 'delete') run(async () => {
+    const { result } = await api('delete', { id: p.id });
+    clearTimeout(undoDeleteTimer); undoDeleteToken = result.undoToken;
+    $('delete-undo-text').textContent = '已删除 ' + p.name; $('delete-undo').hidden = false;
+    undoDeleteTimer = setTimeout(() => { undoDeleteToken = null; $('delete-undo').hidden = true; }, Math.max(0, result.expiresAt - Date.now()));
+  }); };
 }
+$('api-search').oninput = () => { if (state) render(); };
+$('favorites-only').onclick = () => { if (!state) return; favoritesOnly = !favoritesOnly; $('favorites-only').setAttribute('aria-pressed', String(favoritesOnly)); render(); };
+$('undo-delete').onclick = () => run(async () => {
+  await api('undo-delete', { token: undoDeleteToken });
+  clearTimeout(undoDeleteTimer); undoDeleteToken = null; $('delete-undo').hidden = true; notice('已恢复 API');
+});
 function refreshOne(p) {
   run(async () => { notice(`查询 ${p.name}…`); const { result } = await api('refresh', { id: p.id }); notice(result.status === 'ok' ? '用量已更新' : `${p.name}：${result.message}`, result.status === 'error'); });
 }

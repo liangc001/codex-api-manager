@@ -110,7 +110,7 @@ export async function testConnection(profile, key, fetcher = fetch) {
   }
 }
 
-const operations = new Set(['save', 'delete', 'switch', 'restore', 'monitor', 'import', 'export', 'refresh', 'restart-codex', 'test-connection', 'export-diagnostics']);
+const operations = new Set(['save', 'delete', 'switch', 'restore', 'monitor', 'import', 'export', 'refresh', 'restart-codex', 'test-connection', 'export-diagnostics', 'favorite', 'undo-delete']);
 const outcomes = new Set(['ok', 'error', 'unsupported', 'completed', 'cancelled', 'network']);
 export function safeLogRow(row) {
   if (!['startup', 'shutdown', 'operation', 'request', 'settings', 'logs-cleared'].includes(row?.event) || !safeDate(row.time)) return null;

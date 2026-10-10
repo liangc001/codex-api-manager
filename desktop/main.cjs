@@ -216,6 +216,7 @@ else {
         const actions = {
           'read-key': async () => ({ key: await manager.readKey(input.id) }),
           save: () => controller.save(input), delete: () => controller.remove(input.id),
+          'undo-delete': () => manager.undoRemove(input.token), favorite: () => manager.setFavorite(input.id, input.favorite),
           switch: () => controller.switchTo(input.id), restore: () => controller.restore(),
           monitor: () => controller.setMonitoring(input.enabled === true),
           import: async () => { if (!await controller.importCurrent()) throw new Error('当前 Codex 没有可导入的 API 地址和 Key。'); },
@@ -303,6 +304,7 @@ app.on('before-quit', event => {
     if (restartAfterShutdown && !controller?.monitor.enabled) {
       restartAfterShutdown = false;
       showWindow();
+      if (window) { window.setTitle('Codex API 管理'); window.webContents.send('manager:tray-action', { action: 'monitor-stopped' }); }
       dialog.showMessageBox(window, { type: 'warning', title: '监控已关闭', message: 'Codex 重启失败，请手动重启。', buttons: ['知道了'] }).catch(() => {});
       return;
     }

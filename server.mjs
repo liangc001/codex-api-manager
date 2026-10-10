@@ -44,6 +44,8 @@ const server = http.createServer(async (req, res) => {
         '/api/import': async () => { if (!await controller.importCurrent()) throw new Error('当前 Codex 没有可导入的 API 地址和 Key。'); },
         '/api/refresh': () => manager.refresh(input.id),
         '/api/list-models': () => manager.listModels(input),
+        '/api/undo-delete': () => manager.undoRemove(input.token),
+        '/api/favorite': () => manager.setFavorite(input.id, input.favorite),
       };
       if (!actions[route]) return send(404, { error: '不存在的操作。' });
       const result = await manager.exclusive(actions[route]);

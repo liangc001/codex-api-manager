@@ -103,7 +103,7 @@ export class TransferService {
       const existing = next.profiles[existingIndex];
       if (existing && duplicates === 'skip') { counts.skipped++; continue; }
       if (existing && this.monitor?.enabled && existing.id === this.monitor.profile.id) throw new Error('请先关闭监控，再覆盖当前 API。');
-      const profile = { ...fields, id: existing?.id || crypto.randomUUID(), encryptedKey: await this.manager.codec.encrypt(key) };
+      const profile = { ...fields, id: existing?.id || crypto.randomUUID(), encryptedKey: await this.manager.codec.encrypt(key), favorite: existing?.favorite === true };
       if (existing) { next.profiles[existingIndex] = profile; counts.updated++; }
       else { next.profiles.push(profile); counts.added++; }
     }

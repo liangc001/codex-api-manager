@@ -1,0 +1,72 @@
+import { _electron as electron } from 'playwright';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import assert from 'node:assert/strict';
+const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'manager-profile-tools-ui-'));
+const env = { ...process.env, CODEX_HOME: path.join(temp, 'codex'), CODEX_MANAGER_TEST_DATA: path.join(temp, 'data'), PORTABLE_EXECUTABLE_DIR: temp };
+delete env.ELECTRON_RUN_AS_NODE;
+const executable = process.argv[2];
+const app = await electron.launch({ ...(executable ? { executablePath: path.resolve(executable), args: [] } : { args: ['.'] }), env });
+try {
+  const page = await app.firstWindow(), errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.waitForFunction(() => document.querySelector('#count').textContent === '0');
+  await page.locator('#close-guide').click();
+  await app.evaluate(({ app, dialog }) => {
+    const service = process.mainModule.require(app.getAppPath() + '/desktop/restart-codex.cjs');
+    service.probe = async () => ({ running: true });
+    service.restart = async () => ({ restarted: true });
+    dialog.showMessageBox = async () => ({ response: 1 });
+  });
+  for (const name of ['Alpha', 'Beta', 'Gamma']) await page.evaluate(p => window.codexManager.request('save', p),
+    { name, url: 'https://profile-tools.example/v1', key: 'fake-secret-' + name, model: 'qa-model', effort: 'high', adapter: 'none' });
+  await page.evaluate(() => load());
+  assert.equal(await page.locator('#connection-status').textContent(), '未配置');
+  await page.locator('[aria-label="收藏 Beta"]').click();
+  await page.waitForFunction(() => !document.body.classList.contains('busy'));
+  assert.equal(await page.locator('.profile h3').first().textContent(), 'Beta');
+  await page.locator('#favorites-only').click();
+  assert.equal(await page.locator('.profile').count(), 1);
+  await page.locator('#api-search').fill('missing');
+  assert.equal(await page.locator('.profile').count(), 0);
+  await page.locator('#api-search').fill('fake-secret');
+  assert.equal(await page.locator('.profile').count(), 0);
+  await page.locator('#api-search').fill('');
+  await page.locator('#favorites-only').click();
+  await page.locator('#api-search').fill('ALPHA');
+  assert.equal(await page.locator('.profile').count(), 1);
+  await page.locator('#api-search').fill('');
+  await page.locator('[title="删除 Beta"]').click();
+  await page.locator('#delete-dialog [value=delete]').click();
+  await page.waitForFunction(() => document.querySelector('#count').textContent === '2');
+  await page.locator('#undo-delete').click();
+  await page.waitForFunction(() => document.querySelector('#count').textContent === '3');
+  assert.equal(await page.locator('[aria-label="取消收藏 Beta"]').count(), 1);
+  const state = await page.evaluate(() => window.codexManager.request('state'));
+  const beta = state.profiles.find(p => p.name === 'Beta');
+  assert.equal((await page.evaluate(id => window.codexManager.request('read-key', { id }), beta.id)).result.key, 'fake-secret-Beta');
+  await page.locator('.profile').filter({ has: page.locator('h3', { hasText: 'Alpha' }) }).locator('.switch-button').click();
+  await page.waitForFunction(() => !document.body.classList.contains('busy'));
+  assert.equal(await page.locator('#connection-status').textContent(), '直连 · 待重启');
+  await page.locator('#restart-codex').click();
+  await page.waitForFunction(() => !document.body.classList.contains('busy'));
+  assert.equal(await page.locator('#connection-status').textContent(), '直连');
+  await page.locator('#monitor-toggle').check();
+  await page.waitForFunction(() => !document.body.classList.contains('busy'));
+  assert.equal(await page.locator('#connection-status').textContent(), '监控中 · 待重启');
+  await fs.mkdir('test-output', { recursive: true });
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.screenshot({ path: `test-output/profile-tools-${width}.png`, fullPage: true });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  }
+  await page.locator('#monitor-toggle').click();
+  await page.waitForFunction(() => !document.body.classList.contains('busy'));
+  assert.equal(await page.locator('#connection-status').textContent(), '直连 · 待重启');
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#count').textContent === '3');
+  assert.equal(await page.locator('[aria-label="取消收藏 Beta"]').count(), 1);
+  assert.deepEqual(errors, []);
+  console.log('Profile tools UI passed: search, favorites, undo with key preservation, connection modes and restart status, responsive layout');
+} finally { await app.close(); await fs.rm(temp, { recursive: true, force: true }); }

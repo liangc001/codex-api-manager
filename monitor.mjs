@@ -279,7 +279,7 @@ export class MonitorController {
   }
   async remove(id) {
     if (this.monitor.enabled && id === this.monitor.profile.id) throw new Error('无法删除正在监控的 API。');
-    await this.manager.remove(id);
+    return this.manager.remove(id);
   }
   async restore() {
     if (this.monitor.enabled) throw new Error('请先关闭实时监控，再撤销切换。');
