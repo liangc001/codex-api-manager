@@ -1,4 +1,48 @@
 /* Current connection, monitor placement and categorized settings. */
+:root { --font-body: 13px; --font-caption: 12px; --font-section: 14px; --font-dialog: 20px; }
+.theme-unlock { margin-top: 18px; font-size: var(--font-caption); color: var(--muted); }
+.theme-unlock summary { cursor: pointer; }
+.theme-unlock-controls { display: flex; gap: 8px; margin-top: 12px; }
+.theme-unlock-controls input { flex: 1; }
+.theme-unlock-controls button { flex: none; }
+.theme-unlock p { margin: 8px 0 0; }
+/* Rainbow accents stay on borders and controls; content surfaces remain calm. */
+html[data-palette="rainbow"] { --accent: #b6a0ff; --spectrum: linear-gradient(110deg, #fa839d, #edbc72 22%, #85d7ba 45%, #7cb9f4 68%, #b8a0f3 87%, #ec9fd4); }
+[data-palette="rainbow"] :is(.current, .profile.active, dialog, .quick-guide, .restart-reminder, .update-banner) { border-color: transparent; background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--spectrum) border-box; }
+[data-palette="rainbow"] .current::before { background: var(--spectrum); }
+[data-palette="rainbow"] button.primary,
+[data-palette="rainbow"] button.primary:not(:disabled):hover { background: var(--spectrum); border-color: transparent; color: #182025; }
+[data-palette="rainbow"] .brand-icon { background: var(--spectrum); color: #182025; box-shadow: none; }
+[data-palette="rainbow"] #monitor-toggle:checked { background: var(--spectrum); border-color: #b6a0ff; }
+[data-palette="rainbow"] .settings-nav button[aria-selected="true"],
+[data-palette="rainbow"] .connection-status:not(.pending),
+[data-palette="rainbow"] .profile.active .switch-button:disabled { background: #30283e; border-color: #665380; color: #d4c0f5; }
+[data-palette="rainbow"] :is(input:focus, select:focus, .key-input:focus-within) { border-color: #b6a0ff; }
+[data-palette="rainbow"] .profile.active { border-left-color: #b6a0ff; }
+body { font-size: var(--font-body); }
+button, input, select, label { font-size: var(--font-body); }
+.settings-nav button, .settings-content label, .settings-content button,
+.settings-content input, .settings-content select, .settings-content .monitor-toggle,
+.settings-content .diagnostic-control strong, .settings-content .update-control strong { font-size: var(--font-body); }
+.settings-content h3, .settings-content h3.settings-section-title { font-size: var(--font-section); }
+.settings-content p, .settings-content .options > summary, .storage-path > span,
+.settings-content .storage-path code { font-size: var(--font-caption); line-height: 1.6; }
+.dialog-heading h2, #settings-form > .dialog-heading h2 { font-size: var(--font-dialog); }
+.profile-meta, .profile-group-heading h3, .profile-group-count,
+.usage-message, .usage-time, .metric span, .monitor-toggle, .monitor-scope { font-size: var(--font-caption); }
+.profile-details-link { min-height: 0; height: auto; padding: 0; border: 0; border-radius: 3px; background: transparent; font-size: 14px; font-weight: 600; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.profile-details-link::after { content: '›'; margin-left: 5px; color: var(--muted); font-weight: 400; }
+.profile-details-link:not(:disabled):hover { background: transparent; color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
+#api-details { width: min(660px, calc(100% - 32px)); max-height: calc(100dvh - 32px); overflow: auto; }
+.detail-section { border-top: 1px solid var(--line); padding: 18px 0 4px; }
+.detail-section h3 { font-size: var(--font-section); margin: 0 0 8px; }
+.detail-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 44%); gap: 20px; padding: 12px 0; }
+.detail-row strong { font-size: var(--font-body); font-weight: 500; }
+.detail-row p { color: var(--muted); font-size: var(--font-caption); line-height: 1.7; margin: 5px 0 0; }
+.detail-value { text-align: right; overflow-wrap: anywhere; font-size: var(--font-body); font-variant-numeric: tabular-nums; }
+[data-theme="dark"] #api-details { background: var(--surface); color: var(--ink); border-color: var(--line); }
+[data-theme="dark"] .profile-details-link { background: transparent; border: 0; color: var(--ink); }
+[data-theme="dark"] .profile-details-link:not(:disabled):hover { background: transparent; color: var(--accent); }
 .current .eyebrow { font-size: 14px; letter-spacing: .2px; }
 .current .connection-status { font-size: 12px; padding: 3px 9px; font-weight: 500; vertical-align: 1px; }
 .connection-status::before { width: 6px; height: 6px; }
@@ -40,7 +84,7 @@ dialog#settings-dialog { width: min(740px, calc(100% - 32px)); padding: 0; overf
 .settings-content .update-control { margin: 0 0 18px; }
 .settings-content .log-controls { margin: 0 0 18px; }
 .settings-content .diagnostic-control { border: 0; padding: 0; margin: 0; align-items: flex-start; }
-.settings-content .path-control input { font-size: 12px; }
+.settings-content .path-control input { font-size: var(--font-body); }
 .settings-content #storage-details { margin-top: 22px; }
 #settings-form > .dialog-actions { margin: 0; padding: 16px 24px; flex: none; }
 #settings-form > #settings-notice { margin: 0 24px 12px; flex: none; }
@@ -50,10 +94,12 @@ dialog#settings-dialog { width: min(740px, calc(100% - 32px)); padding: 0; overf
   main > .monitor-section { padding: 14px 16px; }
   .settings-layout { display: flex; flex-direction: column; min-height: 0; }
   .settings-nav { display: flex; padding: 9px 12px; gap: 4px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .settings-nav button { width: auto; flex: 1; margin: 0; justify-content: center; padding: 8px 4px; font-size: 11px; gap: 5px; }
+  .settings-nav button { width: auto; flex: 1; margin: 0; justify-content: center; padding: 8px 4px; font-size: var(--font-caption); gap: 5px; }
   .settings-nav .lucide { width: 14px; height: 14px; }
   .settings-content { padding: 20px; min-height: 290px; }
   #settings-form > .dialog-heading { padding: 16px 20px; }
   #settings-form > .dialog-actions { padding: 14px 20px; }
   .monitor-stats .metric strong { font-size: 17px; }
+  .detail-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .detail-value { text-align: left; }
 }

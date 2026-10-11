@@ -39,7 +39,7 @@
       <div id="current-model" class="mono"></div>
     </section>
     <section class="monitor-section" aria-label="实时请求监控">
-      <div class="monitor-heading"><h2><i data-lucide="activity"></i>请求监控</h2><span class="monitor-scope">本机</span><label class="monitor-toggle monitor-switch" title="监控本机请求；开关后需重启 Codex，开启期间保持本工具运行。"><input type="checkbox" id="monitor-toggle" role="switch" aria-label="请求监控"><span id="monitor-toggle-label">未开启</span></label></div>
+      <div class="monitor-heading"><h2><i data-lucide="activity"></i>请求监控</h2><span class="monitor-scope" title="只统计经过本工具代理的请求，不包含其他电脑">仅本机</span><label class="monitor-toggle monitor-switch" title="监控本机请求；开关后需重启 Codex，开启期间保持本工具运行。"><input type="checkbox" id="monitor-toggle" role="switch" aria-label="请求监控"><span id="monitor-toggle-label">未开启</span></label></div>
       <div id="monitor-body" hidden>
         <div id="monitor-stats" class="monitor-stats"></div>
         <details id="request-details"><summary>最近请求 <span id="request-count">0</span></summary><div class="requests-scroll"><table class="request-table"><thead><tr><th>时间</th><th>API / 模型</th><th>状态</th><th>首字节</th><th>耗时</th></tr></thead><tbody id="request-rows"></tbody></table></div></details>
@@ -56,6 +56,11 @@
       <div id="profiles" class="profiles"></div>
     </section>
   </main>
+  <dialog id="api-details" aria-labelledby="api-details-title">
+    <div class="dialog-heading"><h2 id="api-details-title">API 详情</h2><button id="close-api-details" type="button" class="icon" aria-label="关闭详情"><i data-lucide="x"></i></button></div>
+    <div id="api-details-content"></div>
+    <div class="dialog-actions"><button id="details-refresh" type="button"><i data-lucide="refresh-cw"></i>刷新用量</button><button id="details-edit" type="button" class="primary">编辑 API</button></div>
+  </dialog>
   <dialog id="editor">
     <form id="profile-form">
       <div class="dialog-heading"><h2 id="editor-title">添加 API</h2><button type="button" id="close-editor" class="icon" title="关闭"><i data-lucide="x"></i></button></div>
@@ -107,6 +112,7 @@
           <section id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general">
             <h3>外观</h3>
       <label class="setting-row">主题<select id="theme-select"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></label>
+      <details class="theme-unlock"><summary>隐藏主题</summary><div class="theme-unlock-controls"><input id="theme-password" type="password" autocomplete="off" placeholder="输入解锁口令" aria-label="隐藏主题口令"><button id="unlock-theme" type="button">解锁</button></div><p id="theme-unlock-status" role="status"></p></details>
       <h3 class="settings-section-title">软件更新</h3>
       <div class="update-control"><div><strong id="update-version">软件更新</strong><p id="update-status-text" role="status">检查 GitHub 发布版本</p></div><button id="check-update" type="button">检查更新</button></div>
       <label class="monitor-toggle"><input id="auto-updates" type="checkbox"><span>自动检查更新</span></label>

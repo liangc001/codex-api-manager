@@ -4,6 +4,8 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { atomicWrite } from './core.mjs';
 
+// Cosmetic unlock only; this is not an authentication or secret-protection boundary.
+const RAINBOW_PASSWORD_HASH = 'f6bb66d8f5ab544b03d02ca7fd5b920f12bf5316284c491ea1dbd3be569cd86a';
 const logPattern = /^events-\d{4}-\d{2}-\d{2}-[a-f0-9-]+\.jsonl$/;
 const inside = (parent, child) => { const relative = path.relative(parent, child); return !relative || (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative)); };
 
@@ -32,13 +34,13 @@ export class StorageSettings {
     if (typeof input.dataDir !== 'string' || !path.isAbsolute(input.dataDir) || input.dataDir.length > 2000) throw new Error('请选择完整的本地文件夹路径。');
     if (typeof input.logging !== 'boolean' || ![7, 30, 90].includes(input.retentionDays)) throw new Error('日志设置无效。');
     if (input.autoUpdates !== undefined && typeof input.autoUpdates !== 'boolean') throw new Error('更新设置无效。');
-    if (input.theme !== undefined && !['light', 'dark', 'system'].includes(input.theme)) throw new Error('主题设置无效。');
+    if (input.theme !== undefined && !['light', 'dark', 'system', 'rainbow'].includes(input.theme)) throw new Error('主题设置无效。');
     if (input.usageSelection !== undefined && (!Array.isArray(input.usageSelection) || input.usageSelection.length > 5000 || input.usageSelection.some(id => typeof id !== 'string' || id.length > 100))) throw new Error('用量选择无效。');
   }
   get logDir() { return path.join(this.settings.dataDir, 'logs'); }
   state() { return { ...this.settings, portable: this.portable, settingsFile: this.settingsFile, logDir: this.logDir, warning: this.warning }; }
   async persist(settings = this.settings) {
-    const saved = this.portable ? { format: 'portable-v1', logging: settings.logging, retentionDays: settings.retentionDays, autoUpdates: settings.autoUpdates, usageSelection: settings.usageSelection, theme: settings.theme } : settings;
+    const saved = this.portable ? { format: 'portable-v1', logging: settings.logging, retentionDays: settings.retentionDays, autoUpdates: settings.autoUpdates, usageSelection: settings.usageSelection, theme: settings.theme, rainbowUnlocked: settings.rainbowUnlocked === true } : settings;
     await atomicWrite(this.settingsFile, JSON.stringify(saved, null, 2));
   }
   record(event, details = {}) {
@@ -96,7 +98,12 @@ export class StorageSettings {
   }
   async update(input, manager, monitor) {
     this.validate(input);
-    const next = { dataDir: path.resolve(input.dataDir), logging: input.logging, retentionDays: input.retentionDays, autoUpdates: input.autoUpdates ?? this.settings.autoUpdates ?? true, usageSelection: input.usageSelection ?? this.settings.usageSelection, theme: input.theme ?? this.settings.theme ?? 'light' };
+    const next = { dataDir: path.resolve(input.dataDir), logging: input.logging, retentionDays: input.retentionDays, autoUpdates: input.autoUpdates ?? this.settings.autoUpdates ?? true, usageSelection: input.usageSelection ?? this.settings.usageSelection, theme: input.theme ?? this.settings.theme ?? 'light', rainbowUnlocked: this.settings.rainbowUnlocked === true };
+    if (input.unlockPassword !== undefined) {
+      if (typeof input.unlockPassword !== 'string' || input.unlockPassword.length > 100 || crypto.createHash('sha256').update(input.unlockPassword).digest('hex') !== RAINBOW_PASSWORD_HASH) throw new Error('口令不正确。');
+      next.rainbowUnlocked = true;
+    }
+    if (next.theme === 'rainbow' && !next.rainbowUnlocked) throw new Error('请先解锁隐藏主题。');
     this.validate(next);
     await this.tail;
     let migrated = false;

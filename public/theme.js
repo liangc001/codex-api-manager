@@ -3,8 +3,9 @@
   const media = matchMedia('(prefers-color-scheme: dark)');
   let preference = 'light';
   function apply(value, remember = false) {
-    preference = ['light', 'dark', 'system'].includes(value) ? value : 'light';
-    document.documentElement.dataset.theme = preference === 'system' ? (media.matches ? 'dark' : 'light') : preference;
+    preference = ['light', 'dark', 'system', 'rainbow'].includes(value) ? value : 'light';
+    document.documentElement.dataset.palette = preference;
+    document.documentElement.dataset.theme = preference === 'system' ? (media.matches ? 'dark' : 'light') : preference === 'rainbow' ? 'dark' : preference;
     if (remember) { try { localStorage.setItem('appearance-theme', preference); } catch {} }
   }
   try { apply(localStorage.getItem('appearance-theme')); } catch { apply('light'); }

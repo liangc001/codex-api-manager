@@ -36,6 +36,24 @@ try {
     await page.evaluate(p => window.codexManager.request('save', p), { name, url, key: 'fake-test-key', model: 'gpt-6-sol', effort: 'high', adapter: 'none' });
   }
   await page.evaluate(() => load());
+  await page.locator('[aria-label="查看详情 日常使用"]').click();
+  assert.ok((await page.locator('#api-details-content').textContent()).includes('其他电脑直接访问服务商的请求不可见'));
+  assert.ok((await page.locator('#api-details-content').textContent()).includes('未启用用量查询'));
+  assert.equal(await page.locator('#details-refresh').isDisabled(), true);
+  assert.ok(!(await page.locator('#api-details-content').textContent()).includes('fake-test-key'));
+  await page.locator('#details-edit').click();
+  assert.equal(await page.locator('#profile-form [name=name]').inputValue(), '日常使用');
+  await page.locator('#cancel-editor').click();
+  await page.evaluate(() => {
+    const p = state.profiles.find(p => p.name === '日常使用');
+    p.usage = { status: 'ok', scope: '此 Key 额度', remaining: 120, used: 30, today: 2, tokens: 1000, unit: 'USD', checkedAt: Date.now(), windows: [{ name: 'daily', used: 2, limit: 10 }] };
+    openApiDetails(p.id);
+  });
+  const detailText = await page.locator('#api-details-content').textContent();
+  for (const text of ['120 USD', '30 USD', '今日花费', '2 / 10 USD', '不能默认理解为今天或本月', '不是实时余额']) assert.ok(detailText.includes(text));
+  await page.screenshot({ path: 'test-output/api-details-usage.png', fullPage: true });
+  await page.locator('#close-api-details').click();
+  await page.evaluate(() => load());
   for (const theme of ['light', 'dark']) {
     await page.locator('#settings').click();
     await page.locator('#theme-select').selectOption(theme);
@@ -66,6 +84,10 @@ try {
       assert.ok(await page.locator('#save-settings').isVisible());
       assert.ok(await page.evaluate(() => document.querySelector('#settings-dialog').scrollWidth <= document.querySelector('#settings-dialog').clientWidth));
       await page.locator('#cancel-settings').click();
+      await page.locator('[aria-label="查看详情 日常使用"]').click();
+      await page.screenshot({ path: `test-output/api-details-${theme}-${width}.png` });
+      assert.ok(await page.evaluate(() => document.querySelector('#api-details').scrollWidth <= document.querySelector('#api-details').clientWidth));
+      await page.locator('#close-api-details').click();
     }
     await page.setViewportSize({ width: 1000, height: 900 });
     await page.locator('#add').click();
@@ -109,5 +131,34 @@ try {
   await page.locator('#cancel-settings').click();
   assert.equal((await page.evaluate(() => window.codexManager.request('state'))).settings.theme, 'system');
   assert.deepEqual(errors, []);
+  await page.locator('#settings').click();
+  assert.equal(await page.locator('#theme-select option[value=rainbow]').count(), 0);
+  await page.locator('.theme-unlock summary').click();
+  await page.locator('#theme-password').fill('wrong');
+  await page.locator('#unlock-theme').click();
+  await page.waitForFunction(() => document.querySelector('#theme-unlock-status').textContent === '口令不正确。');
+  assert.equal(await page.locator('#theme-select option[value=rainbow]').count(), 0);
+  if (process.env.MANAGER_THEME_TEST_PASSWORD) {
+  await page.locator('#theme-password').fill(process.env.MANAGER_THEME_TEST_PASSWORD);
+  await page.locator('#theme-password').press('Enter');
+  await page.waitForFunction(() => document.documentElement.dataset.palette === 'rainbow');
+  assert.equal(await page.locator('#theme-password').inputValue(), '');
+  await page.locator('#save-settings').click();
+  await page.waitForFunction(() => !document.querySelector('#settings-form').hasAttribute('aria-busy'));
+  await page.locator('#cancel-settings').click();
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#count').textContent === '3');
+  assert.equal(await page.locator('html').getAttribute('data-palette'), 'rainbow');
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.screenshot({ path: `test-output/theme-rainbow-${width}.png`, fullPage: true });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  }
+  await page.locator('#settings').click();
+  assert.equal(await page.locator('#theme-select').inputValue(), 'rainbow');
+  await page.locator('#theme-select').selectOption('dark');
+  await page.locator('#cancel-settings').click();
+  assert.equal(await page.locator('html').getAttribute('data-palette'), 'rainbow');
+  }
   console.log('Theme UI passed: preview, cancel/Escape, save/reload, system changes, responsive screens and dialogs');
 } finally { await app.close(); await fs.rm(temp, { recursive: true, force: true }); }

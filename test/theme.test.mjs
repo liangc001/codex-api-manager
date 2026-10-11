@@ -22,6 +22,19 @@ test('portable appearance survives migration; partial settings updates preserve 
   const reopened = new StorageSettings(copy, { portable: true });
   await reopened.init();
   assert.equal(reopened.settings.theme, 'dark');
+  const input = { ...settings, dataDir: copy };
+  await assert.rejects(reopened.update({ ...input, theme: 'rainbow' }, {}, monitor), /先解锁/);
+  await assert.rejects(reopened.update({ ...input, unlockPassword: 'wrong' }, {}, monitor), /口令不正确/);
+  if (process.env.MANAGER_THEME_TEST_PASSWORD) {
+  await reopened.update({ ...input, unlockPassword: process.env.MANAGER_THEME_TEST_PASSWORD }, {}, monitor);
+  await reopened.update({ ...input, theme: 'rainbow' }, {}, monitor);
+  const persisted = await fs.readFile(reopened.settingsFile, 'utf8');
+  assert.ok(!persisted.includes('unlockPassword'));
+  const again = new StorageSettings(copy, { portable: true }); await again.init();
+  assert.equal(again.settings.rainbowUnlocked, true);
+  assert.equal(again.settings.theme, 'rainbow');
+  await reopened.update({ ...input, theme: 'dark' }, {}, monitor);
+  }
   assert.equal(reopened.settings.dataDir, copy);
   await assert.rejects(reopened.update({ ...settings, dataDir: copy, theme: 'invalid' }, {}, monitor), /主题设置无效/);
   assert.equal(reopened.settings.theme, 'dark');
