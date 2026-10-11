@@ -36,7 +36,12 @@ try {
     await page.evaluate(p => window.codexManager.request('save', p), { name, url, key: 'fake-test-key', model: 'gpt-6-sol', effort: 'high', adapter: 'none' });
   }
   await page.evaluate(() => load());
+  assert.equal(await page.locator('.profile-details-button').count(), 3);
+  assert.equal(await page.locator('.profile-details-button').first().innerText(), '详情');
   await page.locator('[aria-label="查看详情 日常使用"]').click();
+  assert.equal(await page.locator('.detail-notes').getAttribute('open'), null);
+  await page.locator('.detail-notes summary').click();
+  assert.equal(await page.locator('.detail-note-body').isVisible(), true);
   assert.ok((await page.locator('#api-details-content').textContent()).includes('其他电脑直接访问服务商的请求不可见'));
   assert.ok((await page.locator('#api-details-content').textContent()).includes('未启用用量查询'));
   assert.equal(await page.locator('#details-refresh').isDisabled(), true);
@@ -149,10 +154,23 @@ try {
   await page.reload();
   await page.waitForFunction(() => document.querySelector('#count').textContent === '3');
   assert.equal(await page.locator('html').getAttribute('data-palette'), 'rainbow');
+  if (await page.locator('#restart-later').isVisible()) await page.locator('#restart-later').click();
   for (const width of [1440, 768, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.screenshot({ path: `test-output/theme-rainbow-${width}.png`, fullPage: true });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.evaluate(() => {
+      const p = state.profiles.find(p => p.name === '日常使用');
+      p.usage = { status: 'ok', remaining: 120, used: 30, today: 2, tokens: 1000, unit: 'USD', checkedAt: Date.now() };
+      openApiDetails(p.id);
+    });
+    await page.screenshot({ path: `test-output/rainbow-details-${width}.png` });
+    assert.ok(await page.evaluate(() => document.querySelector('#api-details').scrollWidth <= document.querySelector('#api-details').clientWidth));
+    await page.locator('#close-api-details').click();
+    await page.locator('#settings').click();
+    await page.screenshot({ path: `test-output/rainbow-settings-${width}.png` });
+    assert.ok(await page.evaluate(() => document.querySelector('#settings-dialog').scrollWidth <= document.querySelector('#settings-dialog').clientWidth));
+    await page.locator('#cancel-settings').click();
   }
   await page.locator('#settings').click();
   assert.equal(await page.locator('#theme-select').inputValue(), 'rainbow');
@@ -160,5 +178,6 @@ try {
   await page.locator('#cancel-settings').click();
   assert.equal(await page.locator('html').getAttribute('data-palette'), 'rainbow');
   }
+  assert.deepEqual(errors, []);
   console.log('Theme UI passed: preview, cancel/Escape, save/reload, system changes, responsive screens and dialogs');
 } finally { await app.close(); await fs.rm(temp, { recursive: true, force: true }); }

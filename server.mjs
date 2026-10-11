@@ -17,6 +17,10 @@ const files = new Map([
   ['/', ['public/index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['public/app.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['public/style.css', 'text/css; charset=utf-8']],
+  ['/visual-polish.css', ['public/visual-polish.css', 'text/css; charset=utf-8']],
+  ['/workspace-ui.css', ['public/workspace-ui.css', 'text/css; charset=utf-8']],
+  ['/rainbow-theme.css', ['public/rainbow-theme.css', 'text/css; charset=utf-8']],
+  ['/theme.js', ['public/theme.js', 'text/javascript; charset=utf-8']],
   ['/lucide.js', ['node_modules/lucide/dist/umd/lucide.js', 'text/javascript; charset=utf-8']],
 ]);
 const server = http.createServer(async (req, res) => {

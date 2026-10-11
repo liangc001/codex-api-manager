@@ -227,10 +227,8 @@ function render() {
     group.heading.lastChild.textContent = `${++group.count} 个 API`;
     const article = el('article', 'profile' + (p.active ? ' active' : '')); article.dataset.id = p.id;
     const info = el('div'); const title = el('div', 'profile-title');
-    const heading = el('h3');
-    const detailsLink = el('button', 'profile-details-link', p.name); detailsLink.type = 'button';
-    detailsLink.setAttribute('aria-label', '查看详情 ' + p.name); detailsLink.onclick = () => openApiDetails(p.id);
-    heading.append(detailsLink); title.append(heading);
+    const heading = el('h3', '', p.name); title.append(heading);
+    title.append(button('panel-top', '查看详情 ' + p.name, () => openApiDetails(p.id), '详情', 'profile-details-button'));
     if (!p.hasKey) title.append(el('span', 'badge empty', '未填写 Key'));
     info.append(title);
     const meta = el('div', 'profile-meta'); meta.append(el('span', '', p.model), el('span', '', p.effort));
@@ -282,34 +280,47 @@ function renderApiDetails() {
   if (!p) { $('api-details').close(); return; }
   $('api-details-title').textContent = p.name;
   const content = $('api-details-content'); content.replaceChildren();
+  const intro = el('div', 'detail-intro');
+  intro.append(el('span', 'detail-state' + (p.active ? ' selected' : ''), p.active ? '当前 API' : '备用 API'), el('span', 'detail-host', new URL(p.url).host));
+  content.append(intro);
+  const notes = el('details', 'detail-notes'); notes.append(el('summary', '', '数据说明'));
+  const noteBody = el('div', 'detail-note-body'); notes.append(noteBody);
+  const usage = section('用量概览'); const u = p.usage;
+  const tiles = el('div', 'detail-tiles'); usage.append(tiles);
+  function metric(name, value, explanation) {
+    const tile = el('div', 'detail-tile'); tile.append(el('span', '', name), el('strong', '', value)); tiles.append(tile);
+    if (explanation) noteBody.append(el('p', '', name + '：' + explanation));
+  }
   function section(title) { const block = el('section', 'detail-section'); block.append(el('h3', '', title)); content.append(block); return block; }
   function row(block, name, value, explanation) {
     const item = el('div', 'detail-row'); const label = el('div'); label.append(el('strong', '', name));
-    if (explanation) label.append(el('p', '', explanation));
+    if (explanation) noteBody.append(el('p', '', name + '：' + explanation));
     item.append(label, el('span', 'detail-value', value)); block.append(item);
   }
+  noteBody.append(el('p', '', '查询范围：来自上游；同一 Key 在其他电脑使用的消耗可能计入，但不能据此判断是谁使用。'));
+  if (u?.status === 'ok') {
+    if (u.unlimited || u.remaining != null) metric('剩余额度', u.unlimited ? '无限额' : number(u.remaining) + ' ' + (u.unit || ''), '上游返回的可用余额或额度；不代表剩余并发。');
+    if (u.used != null) metric('累计使用', number(u.used) + ' ' + (u.unit || ''), '累计范围由服务商定义，不能默认理解为今天或本月。');
+    if (u.today != null) metric('今日花费', number(u.today) + ' ' + (u.unit || ''), '“今日”的日期边界由服务商决定。');
+    if (u.tokens != null) metric('今日 Token', number(u.tokens), '服务商统计的文本计量单位，不等同于请求次数。');
+    const names = { daily: '日额度', weekly: '周额度', monthly: '月额度', '5h': '5 小时额度', '1d': '日额度', '7d': '周额度' };
+    for (const w of [...(u.windows || []), ...(u.subscription || [])]) row(usage, names[w.name] || w.name, number(w.used) + ' / ' + number(w.limit) + ' ' + (u.unit || ''), '已使用 / 上限；重置时间与统计规则由上游决定。');
+    if (u.expiresAt) row(usage, '到期时间', new Date(u.expiresAt).toLocaleString('zh-CN'));
+  } else {
+    const empty = el('div', 'detail-usage-empty'); empty.append(icon('chart-no-axes-column'), el('strong', '', p.adapter === 'none' ? '未启用用量查询' : u?.message || '尚未查询'), el('p', '', p.adapter === 'none' ? '可在编辑 API 中设置查询方式' : '点击下方「刷新用量」获取最新数据')); usage.append(empty);
+    noteBody.append(el('p', '', '未返回的数据不表示用量为零。'));
+  }
+  if (!tiles.childElementCount) tiles.remove();
+  if (u?.scope) row(usage, '查询范围', u.scope);
+  if (u?.checkedAt) row(usage, '最近更新', new Date(u.checkedAt).toLocaleString('zh-CN'), '这是最近一次查询结果，不是实时余额。');
   const config = section('连接配置');
   row(config, 'API 地址', p.url);
   row(config, '模型', p.model);
   const efforts = { minimal: '最低', low: '低', medium: '中', high: '高', xhigh: '最高' };
   row(config, '推理强度', efforts[p.effort] || p.effort, '影响模型思考深度；支持情况由服务商决定。');
   row(config, '密钥', p.hasKey ? '已保存' : '未填写', '查看或修改 Key，请点击编辑 API。');
-  row(config, '当前配置', p.active ? '正在使用' : '未选中');
-  const usage = section('服务商用量'); const u = p.usage;
-  row(usage, '查询范围', u?.scope || '由服务商接口决定', '来自上游；同一 Key 在其他电脑使用的消耗可能计入，但不能据此判断是谁使用。');
-  if (u?.status === 'ok') {
-    if (u.unlimited || u.remaining != null) row(usage, u.scope || '剩余额度', u.unlimited ? '无限额' : number(u.remaining) + ' ' + (u.unit || ''), '上游返回的可用余额或额度；不代表剩余并发。');
-    if (u.used != null) row(usage, '累计使用', number(u.used) + ' ' + (u.unit || ''), '累计范围由服务商定义，不能默认理解为今天或本月。');
-    if (u.today != null) row(usage, '今日花费', number(u.today) + ' ' + (u.unit || ''), '“今日”的日期边界由服务商决定。');
-    if (u.tokens != null) row(usage, '今日 Token', number(u.tokens), '服务商统计的文本计量单位，不等同于请求次数。');
-    const names = { daily: '日额度', weekly: '周额度', monthly: '月额度', '5h': '5 小时额度', '1d': '日额度', '7d': '周额度' };
-    for (const w of [...(u.windows || []), ...(u.subscription || [])]) row(usage, names[w.name] || w.name, number(w.used) + ' / ' + number(w.limit) + ' ' + (u.unit || ''), '已使用 / 上限；重置时间与统计规则由上游决定。');
-    if (u.expiresAt) row(usage, '到期时间', new Date(u.expiresAt).toLocaleString('zh-CN'));
-  } else row(usage, '查询状态', p.adapter === 'none' ? '未启用用量查询' : u?.message || '尚未查询', '未返回的数据不表示用量为零。');
-  if (u?.checkedAt) row(usage, '最近更新', new Date(u.checkedAt).toLocaleString('zh-CN'), '这是最近一次查询结果，不是实时余额。');
-  const monitoring = section('请求可见范围');
-  row(monitoring, '本机监控', '仅本机代理', '只看到经过本工具的请求，其他电脑直接访问服务商的请求不可见。');
-  row(monitoring, '其他人 / 全局并发', '当前不支持', '需要服务商提供账户级请求或并发接口及查询权限；现有用量接口没有这些数据。');
+  noteBody.append(el('p', '', '本机监控：只看到经过本工具的请求，其他电脑直接访问服务商的请求不可见。'), el('p', '', '其他人 / 全局并发：当前不支持。需要服务商提供账户级请求或并发接口及查询权限；现有用量接口没有这些数据。'));
+  content.append(notes);
   $('details-refresh').disabled = busy || !p.hasKey || p.adapter === 'none';
 }
 $('close-api-details').onclick = () => $('api-details').close();

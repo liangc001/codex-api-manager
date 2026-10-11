@@ -3,6 +3,8 @@ data/
 test-output/
 *.log
 dist/
+dist-release/
+dist-details-preview/
 public/lucide.js
 .env
 .env.*
