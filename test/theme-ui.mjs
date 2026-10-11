@@ -10,6 +10,7 @@ const executable = process.argv[2];
 const app = await electron.launch({ ...(executable ? { executablePath: path.resolve(executable), args: [] } : { args: ['.'] }), env });
 try {
   const page = await app.firstWindow(), errors = [];
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   page.on('pageerror', e => errors.push(e.message));
   await page.waitForFunction(() => document.querySelector('#count').textContent === '0');
   await page.locator('#close-guide').click();
@@ -40,14 +41,31 @@ try {
     await page.locator('#theme-select').selectOption(theme);
     await page.waitForFunction(() => !document.querySelector('#settings-form').hasAttribute('aria-busy'));
     await page.screenshot({ path: `test-output/theme-${theme}-settings.png` });
+    await page.locator('#settings-tab-general').focus();
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.locator('#settings-tab-data').getAttribute('aria-selected'), 'true');
+    await page.locator('#retention-days').selectOption('7');
+    await page.locator('#settings-tab-support').click();
+    assert.equal(await page.locator('#export-diagnostics').isVisible(), true);
+    await page.screenshot({ path: `test-output/theme-${theme}-settings-support.png` });
+    await page.locator('#settings-tab-data').click();
+    assert.equal(await page.locator('#retention-days').inputValue(), '7');
+    await page.screenshot({ path: `test-output/theme-${theme}-settings-data.png` });
     await page.locator('#settings-form button[type=submit]').click();
     await page.waitForFunction(() => document.querySelector('#settings-notice').textContent === '已保存');
     await page.waitForFunction(() => !document.querySelector('#settings-form').hasAttribute('aria-busy'));
     await page.locator('#cancel-settings').click();
+    assert.equal((await page.evaluate(() => window.codexManager.request('state'))).settings.retentionDays, 7);
     for (const width of [1440, 768, 390]) {
       await page.setViewportSize({ width, height: 1000 });
       await page.screenshot({ path: `test-output/theme-${theme}-${width}.png`, fullPage: true });
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await page.locator('#settings').click();
+      await page.locator('#settings-tab-data').click();
+      await page.screenshot({ path: `test-output/settings-${theme}-${width}.png` });
+      assert.ok(await page.locator('#save-settings').isVisible());
+      assert.ok(await page.evaluate(() => document.querySelector('#settings-dialog').scrollWidth <= document.querySelector('#settings-dialog').clientWidth));
+      await page.locator('#cancel-settings').click();
     }
     await page.setViewportSize({ width: 1000, height: 900 });
     await page.locator('#add').click();
@@ -65,6 +83,9 @@ try {
   });
   await page.locator('.profile').first().locator('.switch-button').click();
   await page.waitForFunction(() => !document.body.classList.contains('busy'));
+  const order = await page.evaluate(() => document.querySelector('.current').compareDocumentPosition(document.querySelector('.monitor-section')) & Node.DOCUMENT_POSITION_FOLLOWING && document.querySelector('.monitor-section').compareDocumentPosition(document.querySelector('.list-section')) & Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.ok(order, 'Monitor must appear between the current API and API list');
+  assert.ok(await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.eyebrow')).fontSize) >= 14));
   await page.locator('#monitor-toggle').check();
   await page.waitForFunction(() => !document.body.classList.contains('busy'));
   await page.screenshot({ path: 'test-output/theme-dark-monitor-reminder.png', fullPage: true });

@@ -271,6 +271,7 @@ function milliseconds(value) { return value == null ? '—' : value < 1000 ? `${
 function renderMetrics(m) {
   if (!m) return;
   $('monitor-toggle').checked = m.enabled;
+  $('monitor-toggle-label').textContent = m.enabled ? '已开启' : '未开启';
   $('monitor-toggle').disabled = busy;
   const hasData = m.enabled || m.active || m.success || m.failed;
   $('monitor-body').hidden = !hasData;
@@ -522,7 +523,28 @@ function renderSettings() {
   $('cache-path').textContent = state.cacheDir;
   settingsNotice(s.warning || '', !!s.warning);
 }
-$('settings').onclick = async () => { if (busy || !state.settings) return; try { await load(); renderSettings(); $('storage-details').open = false; $('settings-dialog').showModal(); icons(); } catch (e) { notice(e.message, true); } };
+function selectSettingsTab(name, focus = false) {
+  for (const tab of document.querySelectorAll('[data-settings-tab]')) {
+    const selected = tab.dataset.settingsTab === name;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    $(tab.getAttribute('aria-controls')).hidden = !selected;
+    if (selected && focus) tab.focus();
+  }
+}
+for (const tab of document.querySelectorAll('[data-settings-tab]')) {
+  tab.onclick = () => selectSettingsTab(tab.dataset.settingsTab);
+  tab.onkeydown = event => {
+    const tabs = [...document.querySelectorAll('[data-settings-tab]')];
+    const index = tabs.indexOf(tab);
+    const step = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : ['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 0;
+    if (!step && !['Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const target = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + step + tabs.length) % tabs.length;
+    selectSettingsTab(tabs[target].dataset.settingsTab, true);
+  };
+}
+$('settings').onclick = async () => { if (busy || !state.settings) return; try { await load(); renderSettings(); selectSettingsTab('general'); $('storage-details').open = false; $('settings-dialog').showModal(); icons(); } catch (e) { notice(e.message, true); } };
 $('close-settings').onclick = $('cancel-settings').onclick = () => $('settings-dialog').close();
 $('theme-select').onchange = () => window.managerTheme.apply($('theme-select').value);
 $('settings-dialog').addEventListener('close', () => window.managerTheme.apply(state.settings?.theme, true));

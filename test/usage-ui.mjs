@@ -52,6 +52,7 @@ try {
   assert.ok(!JSON.stringify(settings).includes('fake-alpha-key'));
   // Saving unrelated settings must retain the selection.
   await page.locator('#settings').click();
+  await page.locator('#settings-tab-data').click();
   await page.locator('#logging-enabled').uncheck();
   await page.locator('#save-settings').click();
   await page.waitForFunction(() => document.querySelector('#settings-notice').textContent === '已保存');

@@ -101,6 +101,7 @@ try {
   await page.waitForFunction(() => document.querySelector('#restart-reminder').hidden);
   assert.equal(await app.evaluate(({ app }) => app.supportTest.restarts), 2);
   await page.locator('#settings').click();
+  await page.locator('#settings-tab-support').click();
   await page.locator('#export-diagnostics').click();
   await page.waitForFunction(() => !document.querySelector('#export-diagnostics').disabled);
   await assert.rejects(fs.access(output), { code: 'ENOENT' });

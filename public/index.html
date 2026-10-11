@@ -8,6 +8,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'">
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./visual-polish.css">
+  <link rel="stylesheet" href="./workspace-ui.css">
   <script src="./theme.js"></script>
   <script src="./lucide.js" defer></script>
   <script src="./app.js" defer></script>
@@ -37,6 +38,13 @@
       <div><span class="eyebrow">当前 API</span><span id="connection-status" class="connection-status" role="status"></span><div id="current-name" class="current-name">读取中...</div><div id="current-url" class="mono"></div></div>
       <div id="current-model" class="mono"></div>
     </section>
+    <section class="monitor-section" aria-label="实时请求监控">
+      <div class="monitor-heading"><h2><i data-lucide="activity"></i>请求监控</h2><span class="monitor-scope">本机</span><label class="monitor-toggle monitor-switch" title="监控本机请求；开关后需重启 Codex，开启期间保持本工具运行。"><input type="checkbox" id="monitor-toggle" role="switch" aria-label="请求监控"><span id="monitor-toggle-label">未开启</span></label></div>
+      <div id="monitor-body" hidden>
+        <div id="monitor-stats" class="monitor-stats"></div>
+        <details id="request-details"><summary>最近请求 <span id="request-count">0</span></summary><div class="requests-scroll"><table class="request-table"><thead><tr><th>时间</th><th>API / 模型</th><th>状态</th><th>首字节</th><th>耗时</th></tr></thead><tbody id="request-rows"></tbody></table></div></details>
+      </div>
+    </section>
     <div id="notice" class="notice" role="status" hidden></div>
     <section id="update-banner" class="update-banner" aria-label="软件更新" hidden><div class="restart-card-heading"><span>软件更新</span><button id="close-update-reminder" class="icon" type="button" title="稍后更新" aria-label="稍后更新"><i data-lucide="x"></i></button></div><strong id="update-title">发现新版本</strong><p id="update-detail" role="status">保留 API 配置与 Key。</p><div class="restart-card-actions"><button id="install-update" class="primary" type="button"><i data-lucide="download"></i><span>更新并重启</span></button><button id="update-later" class="plain" type="button">稍后</button></div></section>
     <section id="restart-reminder" class="restart-reminder" aria-label="重启提醒" hidden><div class="restart-card-heading"><span>配置待生效</span><button id="close-restart-reminder" class="icon" title="稍后重启" aria-label="稍后重启"><i data-lucide="x"></i></button></div><strong>重启 Codex</strong><p>重新加载配置，继续你的对话。</p><div class="restart-card-actions"><button id="restart-now" class="primary"><i data-lucide="rotate-cw"></i>立即重启</button><button id="restart-later" class="plain">稍后</button></div></section>
@@ -46,13 +54,6 @@
       <div class="api-filters"><input id="api-search" type="search" placeholder="搜索名称、地址或模型" aria-label="搜索 API"><button id="favorites-only" type="button" aria-pressed="false"><i data-lucide="star"></i>收藏</button></div>
       <div id="delete-undo" class="delete-undo" role="status" hidden><span id="delete-undo-text"></span><button id="undo-delete" type="button" class="plain">撤销删除</button></div>
       <div id="profiles" class="profiles"></div>
-    </section>
-    <section class="monitor-section" aria-label="实时请求监控">
-      <div class="monitor-heading"><h2>请求监控</h2><label class="monitor-toggle" title="监控本机请求；开关后需重启 Codex，开启期间保持本工具运行。"><input type="checkbox" id="monitor-toggle"><span>开启</span></label></div>
-      <div id="monitor-body" hidden>
-        <div id="monitor-stats" class="monitor-stats"></div>
-        <details id="request-details"><summary>最近请求 <span id="request-count">0</span></summary><div class="requests-scroll"><table class="request-table"><thead><tr><th>时间</th><th>API / 模型</th><th>状态</th><th>首字节</th><th>耗时</th></tr></thead><tbody id="request-rows"></tbody></table></div></details>
-      </div>
     </section>
   </main>
   <dialog id="editor">
@@ -96,19 +97,42 @@
   <dialog id="settings-dialog">
     <form id="settings-form">
       <div class="dialog-heading"><h2>设置</h2><button type="button" id="close-settings" class="icon" title="关闭"><i data-lucide="x"></i></button></div>
-      <label>外观<select id="theme-select"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></label>
+      <div class="settings-layout">
+        <nav class="settings-nav" role="tablist" aria-label="设置分类">
+          <button type="button" id="settings-tab-general" role="tab" aria-selected="true" aria-controls="settings-panel-general" data-settings-tab="general"><i data-lucide="sliders-horizontal"></i>外观与更新</button>
+          <button type="button" id="settings-tab-data" role="tab" aria-selected="false" aria-controls="settings-panel-data" tabindex="-1" data-settings-tab="data"><i data-lucide="folder-open"></i>数据与日志</button>
+          <button type="button" id="settings-tab-support" role="tab" aria-selected="false" aria-controls="settings-panel-support" tabindex="-1" data-settings-tab="support"><i data-lucide="wrench"></i>问题排查</button>
+        </nav>
+        <div class="settings-content">
+          <section id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general">
+            <h3>外观</h3>
+      <label class="setting-row">主题<select id="theme-select"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></label>
+      <h3 class="settings-section-title">软件更新</h3>
       <div class="update-control"><div><strong id="update-version">软件更新</strong><p id="update-status-text" role="status">检查 GitHub 发布版本</p></div><button id="check-update" type="button">检查更新</button></div>
       <label class="monitor-toggle"><input id="auto-updates" type="checkbox"><span>自动检查更新</span></label>
+
+          </section>
+          <section id="settings-panel-data" role="tabpanel" aria-labelledby="settings-tab-data" hidden>
+            <h3>数据存储</h3>
       <label>数据目录<div class="path-control"><input id="data-path" readonly><button type="button" data-open-dir="data" class="icon" title="打开数据目录（包含密钥）"><i data-lucide="folder-open"></i></button></div></label>
+      <h3 class="settings-section-title">日志</h3>
       <div class="log-controls"><label class="monitor-toggle"><input id="logging-enabled" type="checkbox"><span>保存日志</span></label><div><button type="button" data-open-dir="logs" class="icon" title="打开日志" aria-label="打开日志"><i data-lucide="folder-open"></i></button><button type="button" id="clear-logs" class="icon" title="清空日志" aria-label="清空日志"><i data-lucide="trash-2"></i></button></div></div>
-      <div class="diagnostic-control"><div><strong>问题排查</strong><p>诊断不含 Key 或对话</p></div><button id="export-diagnostics" type="button"><i data-lucide="file-down"></i>导出诊断</button></div>
-      <label>保留时间<select id="retention-days"><option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option></select></label>
+      <label class="setting-row">保留时间<select id="retention-days"><option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option></select></label>
       <details id="storage-details" class="options"><summary>文件位置</summary><div class="options-body">
       <div class="storage-path"><span>日志</span><div><code id="log-path"></code></div></div>
       <div class="storage-path"><span>设置文件</span><div><code id="settings-path"></code><button type="button" data-open-dir="settings" class="icon" title="打开设置目录"><i data-lucide="folder-open"></i></button></div></div>
       <div class="storage-path"><span>Codex 配置目录</span><div><code id="codex-path"></code><button type="button" data-open-dir="config" class="icon" title="打开 Codex 配置目录"><i data-lucide="folder-open"></i></button></div></div>
       <div class="storage-path"><span>缓存</span><div><code id="cache-path"></code><button type="button" data-open-dir="cache" class="icon" title="打开缓存目录"><i data-lucide="folder-open"></i></button></div></div>
       </div></details>
+
+          </section>
+          <section id="settings-panel-support" role="tabpanel" aria-labelledby="settings-tab-support" hidden>
+            <h3>问题排查</h3>
+      <div class="diagnostic-control"><div><strong>诊断文件</strong><p>不含 Key 或对话</p></div><button id="export-diagnostics" type="button"><i data-lucide="file-down"></i>导出诊断</button></div>
+
+          </section>
+        </div>
+      </div>
       <div id="settings-notice" class="notice" role="status" hidden></div>
       <div class="dialog-actions"><button type="button" id="cancel-settings">取消</button><button type="submit" id="save-settings" class="primary"><i data-lucide="check"></i>保存</button></div>
     </form>

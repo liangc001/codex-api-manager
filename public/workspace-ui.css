@@ -1,0 +1,59 @@
+/* Current connection, monitor placement and categorized settings. */
+.current .eyebrow { font-size: 14px; letter-spacing: .2px; }
+.current .connection-status { font-size: 12px; padding: 3px 9px; font-weight: 500; vertical-align: 1px; }
+.connection-status::before { width: 6px; height: 6px; }
+main > .monitor-section { margin-top: 16px; padding: 16px 20px; }
+.monitor-heading { justify-content: flex-start; gap: 9px; }
+.monitor-heading h2 { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.monitor-heading h2 .lucide { color: var(--accent); width: 17px; height: 17px; }
+.monitor-heading .monitor-toggle { margin-left: auto; }
+.monitor-heading .monitor-switch { flex-direction: row-reverse; gap: 10px; min-height: 32px; }
+#monitor-toggle { appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 42px; height: 24px; padding: 0; margin: 0; border: 1px solid #bcc9c1; border-radius: 99px; background: #dce4df; cursor: pointer; }
+#monitor-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #00000025; }
+#monitor-toggle:checked { background: var(--accent); border-color: var(--accent); }
+#monitor-toggle:checked::after { transform: translateX(18px); }
+#monitor-toggle:disabled { cursor: wait; }
+.monitor-switch:has(input:checked) #monitor-toggle-label { color: var(--accent); }
+[data-theme="dark"] #monitor-toggle:not(:checked) { background: #353d39; border-color: #53615a; }
+[data-theme="dark"] #monitor-toggle:checked { background: #39be84; border-color: #39be84; }
+[data-theme="dark"] #monitor-toggle::after { background: #f5faf7; }
+@media (prefers-reduced-motion: no-preference) {
+  #monitor-toggle::after { transition: transform .16s ease; }
+}
+.monitor-scope { color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 11px; }
+.monitor-stats { margin: 18px 0 12px; }
+.monitor-stats .metric strong { font-size: 19px; }
+dialog#settings-dialog { width: min(740px, calc(100% - 32px)); padding: 0; overflow: hidden; }
+#settings-form { display: flex; flex-direction: column; max-height: calc(100dvh - 34px); }
+#settings-form > .dialog-heading { margin: 0; padding: 20px 24px; border-bottom: 1px solid var(--line); flex: none; }
+.settings-layout { display: grid; grid-template-columns: 165px minmax(0, 1fr); min-height: 330px; overflow: auto; }
+.settings-nav { padding: 18px 12px; background: #f5f8f6; border-right: 1px solid var(--line); }
+.settings-nav button { justify-content: flex-start; width: 100%; margin-bottom: 5px; background: transparent; border-color: transparent; font-size: 12px; padding: 10px; }
+.settings-nav button[aria-selected="true"] { color: var(--accent); background: #e4f0e8; font-weight: 600; }
+.settings-nav .lucide { width: 16px; height: 16px; }
+.settings-content { padding: 24px; min-width: 0; }
+.settings-content h3 { font-size: 14px; font-weight: 600; margin: 0 0 18px; }
+.settings-content h3.settings-section-title { padding-top: 22px; border-top: 1px solid var(--line); margin: 24px 0 18px; }
+.settings-content label { font-size: 12px; }
+.settings-content .setting-row { flex-direction: row; justify-content: space-between; align-items: center; gap: 20px; }
+.settings-content .setting-row select { width: 160px; }
+.settings-content .update-control { margin: 0 0 18px; }
+.settings-content .log-controls { margin: 0 0 18px; }
+.settings-content .diagnostic-control { border: 0; padding: 0; margin: 0; align-items: flex-start; }
+.settings-content .path-control input { font-size: 12px; }
+.settings-content #storage-details { margin-top: 22px; }
+#settings-form > .dialog-actions { margin: 0; padding: 16px 24px; flex: none; }
+#settings-form > #settings-notice { margin: 0 24px 12px; flex: none; }
+[data-theme="dark"] .settings-nav { background: #151819; }
+[data-theme="dark"] .settings-nav button[aria-selected="true"] { background: #22342a; color: #87dcad; border-color: transparent; }
+@media (max-width: 640px) {
+  main > .monitor-section { padding: 14px 16px; }
+  .settings-layout { display: flex; flex-direction: column; min-height: 0; }
+  .settings-nav { display: flex; padding: 9px 12px; gap: 4px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .settings-nav button { width: auto; flex: 1; margin: 0; justify-content: center; padding: 8px 4px; font-size: 11px; gap: 5px; }
+  .settings-nav .lucide { width: 14px; height: 14px; }
+  .settings-content { padding: 20px; min-height: 290px; }
+  #settings-form > .dialog-heading { padding: 16px 20px; }
+  #settings-form > .dialog-actions { padding: 14px 20px; }
+  .monitor-stats .metric strong { font-size: 17px; }
+}
