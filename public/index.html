@@ -136,6 +136,8 @@
           <section id="settings-panel-support" role="tabpanel" aria-labelledby="settings-tab-support" hidden>
             <h3>问题排查</h3>
       <div class="diagnostic-control"><div><strong>诊断文件</strong><p>不含 Key 或对话</p></div><button id="export-diagnostics" type="button"><i data-lucide="file-down"></i>导出诊断</button></div>
+      <div class="diagnostic-control session-repair-entry"><div><strong>旧对话连接</strong><p>修复切换 API 后的 provider 不匹配</p></div><button id="open-session-repair" type="button"><i data-lucide="messages-square"></i>修复旧对话</button></div>
+      <div id="auto-session-repair-control"><label class="auto-repair-toggle"><input id="auto-session-repair-toggle" type="checkbox" role="switch"><span>自动兼容旧对话</span></label><p>后台运行，Codex 完全退出后自动备份并兼容自定义 API 对话。</p><p id="auto-session-repair-status" role="status">未开启</p></div>
 
           </section>
         </div>
@@ -144,5 +146,18 @@
       <div class="dialog-actions"><button type="button" id="cancel-settings">取消</button><button type="submit" id="save-settings" class="primary"><i data-lucide="check"></i>保存</button></div>
     </form>
   </dialog>
+  <dialog id="session-repair-dialog" aria-labelledby="session-repair-title">
+    <div class="dialog-heading"><div><h2 id="session-repair-title">修复旧对话连接</h2><p>将选中对话迁移到当前 provider，保留聊天内容；可排除需要独立连接的对话。</p></div><button id="close-session-repair" type="button" class="icon" aria-label="关闭会话修复"><i data-lucide="x"></i></button></div>
+    <div class="session-repair-body">
+      <div class="repair-target">目标 provider <code id="session-repair-target">—</code></div>
+      <p class="repair-help">执行前请正常退出 Codex App 和所有 CLI，并关闭请求监控。修复不会更改全局配置。</p>
+      <div class="repair-toolbar"><label><input id="session-repair-all" type="checkbox">全选可修复对话</label><button id="rescan-session-repair" type="button"><i data-lucide="scan-line"></i>重新扫描</button></div>
+      <div id="session-repair-list" class="session-repair-list"></div>
+      <div id="session-repair-notice" role="status" aria-live="polite"></div>
+      <p class="repair-help">连接元数据与索引加密备份到 data/session-repairs。会话继续产生新内容后，不支持直接撤回。</p>
+    </div>
+    <div class="dialog-actions"><span id="session-repair-count">未选择对话</span><button id="undo-session-repair" type="button">撤回上次修复</button><button id="apply-session-repair" type="button" class="primary" disabled>备份并修复</button></div>
+  </dialog>
+  <script src="./session-repair-ui.js" defer></script>
 </body>
 </html>

@@ -1,5 +1,38 @@
 /* Current connection, monitor placement and categorized settings. */
 :root { --font-body: 13px; --font-caption: 12px; --font-section: 14px; --font-dialog: 20px; }
+.settings-content .session-repair-entry { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line); }
+#auto-session-repair-control { margin-top: 20px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; }
+#auto-session-repair-control .auto-repair-toggle { display: flex; flex-direction: row; align-items: center; gap: 9px; margin: 0; }
+.auto-repair-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
+#auto-session-repair-control p { margin: 8px 0 0; }
+#auto-session-repair-status { color: var(--muted); }
+#auto-session-repair-status.repair-error { color: var(--red); }
+.repair-session > .repair-session-content { min-width: 0; flex: 1; margin: 0; display: block; cursor: pointer; }
+.repair-session .repair-exclude { min-height: 28px; padding: 3px 7px; font-size: 12px; flex: none; align-self: center; }
+.repair-session .repair-exclude[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+@media (max-width: 480px) { .repair-session { flex-wrap: wrap; } .repair-session .repair-exclude { margin-left: 28px; } }
+#session-repair-dialog { width: min(700px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; overflow: hidden; }
+#session-repair-dialog[open] { display: flex; flex-direction: column; }
+#session-repair-dialog > .dialog-heading { padding: 20px 24px; margin: 0; border-bottom: 1px solid var(--line); flex: none; }
+#session-repair-dialog .dialog-heading p, .repair-help { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 8px 0 0; }
+.session-repair-body { padding: 20px 24px; overflow: auto; }
+.repair-target { display: flex; align-items: center; gap: 12px; }
+.repair-target code { color: var(--accent); overflow-wrap: anywhere; }
+.repair-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0 10px; }
+.repair-toolbar label { display: flex; align-items: center; flex-direction: row; gap: 8px; margin: 0; }
+.repair-toolbar input, .repair-session input { width: 16px; height: 16px; flex: none; accent-color: var(--accent); }
+.session-repair-list { max-height: 350px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.repair-session { display: flex; flex-direction: row; align-items: flex-start; gap: 12px; padding: 14px; margin: 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.repair-session:last-child { border-bottom: 0; }
+.repair-session strong { display: block; font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.repair-session small { display: block; margin-top: 5px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.repair-session.unavailable { opacity: .65; cursor: default; }
+.session-repair-list > p { padding: 16px; color: var(--muted); }
+#session-repair-notice { font-size: 13px; margin-top: 14px; overflow-wrap: anywhere; }
+#session-repair-notice.repair-error { color: var(--red); }
+#session-repair-dialog > .dialog-actions { padding: 16px 24px; margin: 0; flex: none; flex-wrap: wrap; }
+#session-repair-count { margin-right: auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 480px) { #session-repair-dialog > .dialog-heading, .session-repair-body { padding: 18px; } #session-repair-dialog > .dialog-actions { padding: 14px 18px; } #session-repair-count { width: 100%; } }
 .theme-unlock { margin-top: 18px; font-size: var(--font-caption); color: var(--muted); }
 .theme-unlock summary { cursor: pointer; }
 .theme-unlock-controls { display: flex; gap: 8px; margin-top: 12px; }

@@ -21,7 +21,7 @@ export class StorageSettings {
     let saved;
     try { saved = JSON.parse(await fs.readFile(this.settingsFile, 'utf8')); }
     catch (e) { if (e.code !== 'ENOENT') throw e; }
-    this.settings = { dataDir: this.root, logging: true, retentionDays: 30, autoUpdates: true, theme: 'light', ...saved };
+    this.settings = { dataDir: this.root, logging: true, retentionDays: 30, autoUpdates: true, theme: 'light', autoSessionRepair: false, sessionRepairExclusions: [], ...saved };
     if (this.portable) this.settings.dataDir = this.root;
     this.validate(this.settings);
     // A disconnected custom drive must not silently create a fresh empty store.
@@ -34,13 +34,15 @@ export class StorageSettings {
     if (typeof input.dataDir !== 'string' || !path.isAbsolute(input.dataDir) || input.dataDir.length > 2000) throw new Error('请选择完整的本地文件夹路径。');
     if (typeof input.logging !== 'boolean' || ![7, 30, 90].includes(input.retentionDays)) throw new Error('日志设置无效。');
     if (input.autoUpdates !== undefined && typeof input.autoUpdates !== 'boolean') throw new Error('更新设置无效。');
+    if (input.autoSessionRepair !== undefined && typeof input.autoSessionRepair !== 'boolean') throw new Error('自动兼容设置无效。');
+    if (input.sessionRepairExclusions !== undefined && (!Array.isArray(input.sessionRepairExclusions) || input.sessionRepairExclusions.length > 5000 || input.sessionRepairExclusions.some(id => typeof id !== 'string' || !/^[a-f0-9-]{36}$/i.test(id)))) throw new Error('会话排除设置无效。');
     if (input.theme !== undefined && !['light', 'dark', 'system', 'rainbow'].includes(input.theme)) throw new Error('主题设置无效。');
     if (input.usageSelection !== undefined && (!Array.isArray(input.usageSelection) || input.usageSelection.length > 5000 || input.usageSelection.some(id => typeof id !== 'string' || id.length > 100))) throw new Error('用量选择无效。');
   }
   get logDir() { return path.join(this.settings.dataDir, 'logs'); }
   state() { return { ...this.settings, portable: this.portable, settingsFile: this.settingsFile, logDir: this.logDir, warning: this.warning }; }
   async persist(settings = this.settings) {
-    const saved = this.portable ? { format: 'portable-v1', logging: settings.logging, retentionDays: settings.retentionDays, autoUpdates: settings.autoUpdates, usageSelection: settings.usageSelection, theme: settings.theme, rainbowUnlocked: settings.rainbowUnlocked === true } : settings;
+    const saved = this.portable ? { format: 'portable-v1', logging: settings.logging, retentionDays: settings.retentionDays, autoUpdates: settings.autoUpdates, usageSelection: settings.usageSelection, theme: settings.theme, rainbowUnlocked: settings.rainbowUnlocked === true, autoSessionRepair: settings.autoSessionRepair, sessionRepairExclusions: settings.sessionRepairExclusions } : settings;
     await atomicWrite(this.settingsFile, JSON.stringify(saved, null, 2));
   }
   record(event, details = {}) {
@@ -99,6 +101,8 @@ export class StorageSettings {
   async update(input, manager, monitor) {
     this.validate(input);
     const next = { dataDir: path.resolve(input.dataDir), logging: input.logging, retentionDays: input.retentionDays, autoUpdates: input.autoUpdates ?? this.settings.autoUpdates ?? true, usageSelection: input.usageSelection ?? this.settings.usageSelection, theme: input.theme ?? this.settings.theme ?? 'light', rainbowUnlocked: this.settings.rainbowUnlocked === true };
+    next.autoSessionRepair = input.autoSessionRepair ?? this.settings.autoSessionRepair ?? false;
+    next.sessionRepairExclusions = [...new Set(input.sessionRepairExclusions ?? this.settings.sessionRepairExclusions ?? [])];
     if (input.unlockPassword !== undefined) {
       if (typeof input.unlockPassword !== 'string' || input.unlockPassword.length > 100 || crypto.createHash('sha256').update(input.unlockPassword).digest('hex') !== RAINBOW_PASSWORD_HASH) throw new Error('口令不正确。');
       next.rainbowUnlocked = true;
@@ -119,7 +123,7 @@ export class StorageSettings {
       if ((await fs.readdir(next.dataDir)).length) throw new Error('目标文件夹必须为空，以免覆盖已有文件。');
       const copied = [];
       try {
-        for (const name of ['profiles.json', 'backups', 'logs']) {
+        for (const name of ['profiles.json', 'backups', 'logs', 'session-repairs']) {
           const from = path.join(source, name), to = path.join(next.dataDir, name);
           try { await fs.access(from); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
           copied.push(to);

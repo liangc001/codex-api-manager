@@ -75,3 +75,22 @@ test('unavailable custom directory is reported instead of silently resetting pro
   await fs.rename(storage.settings.dataDir, path.join(temp, 'disconnected'));
   await assert.rejects(new StorageSettings(storage.root).init(), { code: 'ENOENT' });
 });
+
+test('automatic repair preferences survive unrelated changes and portable relocation', async t => {
+  const { temp, storage, manager, monitor } = await fixture(t);
+  const id = '11111111-1111-4111-8111-111111111111';
+  assert.equal(storage.settings.autoSessionRepair, false);
+  await storage.update({ ...storage.settings, autoSessionRepair: true, sessionRepairExclusions: [id, id] }, manager, monitor);
+  await storage.update({ dataDir: manager.dataDir, logging: false, retentionDays: 7 }, manager, monitor);
+  assert.deepEqual(storage.settings.sessionRepairExclusions, [id]);
+  assert.equal(storage.settings.autoSessionRepair, true);
+  const portable = new StorageSettings(path.join(temp, 'portable'), { portable: true }); await portable.init();
+  await portable.persist({ ...portable.settings, autoSessionRepair: true, sessionRepairExclusions: [id] });
+  const destination = path.join(temp, 'relocated'); await fs.cp(portable.root, destination, { recursive: true });
+  const relocated = new StorageSettings(destination, { portable: true }); await relocated.init();
+  assert.equal(relocated.settings.dataDir, destination);
+  assert.equal(relocated.settings.autoSessionRepair, true);
+  assert.deepEqual(relocated.settings.sessionRepairExclusions, [id]);
+  await assert.rejects(storage.update({ ...storage.settings, autoSessionRepair: 'yes' }, manager, monitor), /自动兼容/);
+  await assert.rejects(storage.update({ ...storage.settings, sessionRepairExclusions: ['invalid'] }, manager, monitor), /会话排除/);
+});

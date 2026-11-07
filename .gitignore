@@ -18,3 +18,5 @@ monitor-session.json
 *.jsonl
 codex-api-profiles*.json
 codex-api-diagnostics*.json
+
+dist-session-preview/

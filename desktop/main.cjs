@@ -10,6 +10,8 @@ let manager;
 let controller;
 let storage;
 let transfer;
+let sessionRepair;
+let autoSessionRepair;
 let finishingQuit = false;
 let quitRequested = false;
 let restartingCodex = false;
@@ -46,7 +48,8 @@ function renderTray(state) {
     { type: 'separator' }, { label: '退出', click: () => { if (controller.monitor.enabled) { showWindow(); window.close(); } else app.quit(); } },
   ]));
 }
-const htmlPath = path.join(__dirname, '..', 'public', 'index.html');
+// 新版界面：设置环境变量 CODEX_MANAGER_UI=v2 后启用 public/v2，默认仍为旧版界面。
+const htmlPath = path.join(__dirname, '..', 'public', ...(process.env.CODEX_MANAGER_UI === 'v2' ? ['v2', 'index.html'] : ['index.html']));
 const trustedPage = pathToFileURL(htmlPath).href;
 const executableDir = app.isPackaged ? (process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe'))) : path.join(__dirname, '..');
 const dataRoot = !app.isPackaged && process.env.CODEX_MANAGER_TEST_DATA ? process.env.CODEX_MANAGER_TEST_DATA : path.join(executableDir, 'data');
@@ -82,6 +85,13 @@ else {
     await controller.init();
     const { TransferService } = await import('../transfer.mjs');
     transfer = new TransferService(manager, controller.monitor);
+    const { SessionRepair } = await import('../session-repair.mjs');
+    sessionRepair = new SessionRepair(manager);
+    const { AutoSessionRepair } = await import('../auto-session-repair.mjs');
+    autoSessionRepair = new AutoSessionRepair(manager, storage, controller.monitor, {
+      canRun: () => !quitRequested && !restartingCodex && !['downloading', 'installing'].includes(updater?.status.phase),
+      onChange: value => { if (window && !window.webContents.isDestroyed()) window.webContents.send('manager:auto-session-repair', value); },
+    });
     const { Updater } = await import('../updater.mjs');
     const updateSession = session.fromPartition('codex-update-network');
     updater = new Updater({ version: app.getVersion(), root: path.join(dataRoot, 'cache', 'updates'),
@@ -118,6 +128,34 @@ else {
           renderTray(state); return state;
         });
         const input = data || {};
+        if (route === 'auto-session-repair-status') return autoSessionRepair.state();
+        if (route === 'release-session-repair') { autoSessionRepair.release(); return { ok: true }; }
+        if (route === 'auto-session-repair-settings') return await manager.exclusive(async () => {
+          if (typeof input.enabled !== 'boolean') throw new Error('自动兼容设置无效。');
+          await storage.update({ ...storage.settings, autoSessionRepair: input.enabled }, manager, controller.monitor);
+          autoSessionRepair.reset(); return autoSessionRepair.state();
+        });
+        if (route === 'exclude-session-repair') return await manager.exclusive(async () => {
+          if (typeof input.excluded !== 'boolean' || !sessionRepair.preview?.candidates.has(input.id)) throw new Error('请重新扫描后设置排除对话。');
+          const ids = new Set(storage.settings.sessionRepairExclusions || []);
+          if (input.excluded) ids.add(input.id); else ids.delete(input.id);
+          await storage.update({ ...storage.settings, sessionRepairExclusions: [...ids] }, manager, controller.monitor);
+          autoSessionRepair.reset(); return autoSessionRepair.state();
+        });
+        if (['scan-session-repair', 'apply-session-repair', 'undo-session-repair'].includes(route)) {
+          autoSessionRepair.hold();
+          return await manager.exclusive(async () => {
+            if (route === 'scan-session-repair') return { result: { ...await sessionRepair.scan(), exclusions: [...(storage.settings.sessionRepairExclusions || [])] } };
+            if (controller.monitor.enabled) throw new Error('请先关闭请求监控，再修复或撤回旧对话连接。');
+            const result = route === 'apply-session-repair' ? await sessionRepair.apply(input) : await sessionRepair.undo();
+            if (route === 'undo-session-repair' && storage.settings.autoSessionRepair) {
+              await storage.update({ ...storage.settings, autoSessionRepair: false }, manager, controller.monitor);
+              autoSessionRepair.reset();
+            }
+            await storage.record('operation', { operation: route, outcome: 'ok' });
+            return { result };
+          });
+        }
         if (route === 'monitor' && input.enabled === false && controller.monitor.enabled) {
           const choice = await dialog.showMessageBox(window, { type: 'question', title: '关闭请求监控',
             message: '关闭监控并重启 Codex？',
@@ -267,6 +305,8 @@ else {
     });
     window.on('closed', () => { window = null; });
     await window.loadFile(htmlPath);
+    setTimeout(() => autoSessionRepair.tick().catch(() => {}), 3000).unref();
+    setInterval(() => autoSessionRepair.tick().catch(() => {}), 15000).unref();
     if (app.isPackaged && !process.env.CODEX_MANAGER_TEST_DATA) {
       const check = () => { if (storage.settings.autoUpdates !== false && !quitRequested) updater.check().catch(() => {}); };
       setTimeout(check, 2000).unref();

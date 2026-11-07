@@ -16,12 +16,17 @@ let origin;
 const files = new Map([
   ['/', ['public/index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['public/app.js', 'text/javascript; charset=utf-8']],
+  ['/session-repair-ui.js', ['public/session-repair-ui.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['public/style.css', 'text/css; charset=utf-8']],
   ['/visual-polish.css', ['public/visual-polish.css', 'text/css; charset=utf-8']],
   ['/workspace-ui.css', ['public/workspace-ui.css', 'text/css; charset=utf-8']],
   ['/rainbow-theme.css', ['public/rainbow-theme.css', 'text/css; charset=utf-8']],
   ['/theme.js', ['public/theme.js', 'text/javascript; charset=utf-8']],
   ['/lucide.js', ['node_modules/lucide/dist/umd/lucide.js', 'text/javascript; charset=utf-8']],
+  // 新版界面（附加入口，不影响默认页面）：/v2
+  ['/v2', ['public/v2/index.html', 'text/html; charset=utf-8']],
+  ['/v2.css', ['public/v2/v2.css', 'text/css; charset=utf-8']],
+  ['/v2.js', ['public/v2/v2.js', 'text/javascript; charset=utf-8']],
 ]);
 const server = http.createServer(async (req, res) => {
   const send = (code, value) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
@@ -58,7 +63,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method !== 'GET' || !files.has(route)) return send(404, { error: '页面不存在。' });
     const [file, contentType] = files.get(route);
     let data = await fs.readFile(path.join(root, file));
-    if (route === '/') data = Buffer.from(data.toString().replace('__MANAGER_TOKEN__', token));
+    if (route === '/' || route === '/v2') data = Buffer.from(data.toString().replace('__MANAGER_TOKEN__', token));
     res.writeHead(200, { 'Content-Type': contentType }); res.end(data);
   } catch (e) {
     const expected = e.code ? '读取或保存本地文件失败，请检查文件权限。' : e.message;
