@@ -87,7 +87,8 @@ test('restart recovers mixed on-disk state without overwriting unrelated threads
 test('unknown history offset columns stop repair before files are modified', async t => {
   const f = await setup(t); const db = new DatabaseSync(path.join(f.manager.home, 'thread_history_1.sqlite'));
   db.exec('ALTER TABLE thread_turns ADD COLUMN new_byte_offset INTEGER'); db.close();
-  await assert.rejects(apply(f), /未知历史偏移字段/); assert.deepEqual(await fs.readFile(f.file), f.original);
+  const preview = await f.service.scan(); assert.equal(preview.entries[0].eligible, false); assert.match(preview.entries[0].reason, /未知历史偏移字段/);
+  await assert.rejects(f.service.apply({ token: preview.token, ids: [f.id] }), /请选择有效会话/); assert.deepEqual(await fs.readFile(f.file), f.original);
 });
 test('provider disagreement is skipped during scan', async t => {
   const f = await setup(t); const db = new DatabaseSync(path.join(f.manager.home, 'state_5.sqlite'));

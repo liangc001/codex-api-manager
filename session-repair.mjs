@@ -13,12 +13,13 @@ const limits = { header: 4 * 1024 * 1024, file: 128 * 1024 * 1024, batch: 512 * 
 
 export async function assertCodexStopped() {
   if (process.platform !== 'win32') fail('此版本只支持 Windows 本机会话修复。');
-  const script = "$ErrorActionPreference='Stop'; $p=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'codex.exe' -or ($_.Name -ieq 'ChatGPT.exe' -and $_.ExecutablePath -match 'Codex') }); [Console]::Out.Write($p.Count)";
+  const script = "$ErrorActionPreference='Stop'; $p=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'codex.exe' -or ($_.Name -ieq 'ChatGPT.exe' -and $_.ExecutablePath -match 'Codex') }); $editor=@($p | Where-Object { $_.ExecutablePath -match '\\.(vscode|vscode-insiders|cursor)\\\\|extensions\\\\openai\\.chatgpt' }).Count; @{count=$p.Count; editor=$editor} | ConvertTo-Json -Compress";
   let stdout;
   try { ({ stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, timeout: 15000 })); }
   catch { fail('无法确认 Codex 是否已退出，请检查权限后重试。'); }
-  if (!/^\d+$/.test(stdout.trim())) fail('无法确认 Codex 是否已退出。');
-  if (Number(stdout.trim())) throw Object.assign(new Error('请先正常退出 Codex App 和所有 Codex CLI，再重试。'), { kind: 'codex-running' });
+  let processes; try { processes = JSON.parse(stdout); } catch { fail('无法确认 Codex 是否已退出。'); }
+  if (!Number.isSafeInteger(processes.count) || processes.count < 0 || !Number.isSafeInteger(processes.editor) || processes.editor < 0 || processes.editor > processes.count) fail('无法确认 Codex 是否已退出。');
+  if (processes.count) throw Object.assign(new Error('请先正常退出 Codex App、所有 Codex CLI 和编辑器中的 Codex，再重试。'), { kind: 'codex-running', processes });
 }
 
 // Locate only a direct object member. Preserve every other byte, including future metadata.
@@ -145,9 +146,10 @@ export class SessionRepair {
           try { buffer = Buffer.alloc(Math.min(stat.size, limits.header)); const { bytesRead } = await handle.read(buffer); buffer = buffer.subarray(0, bytesRead); } finally { await handle.close(); }
           const end = buffer.indexOf(10); if (end < 0) fail('会话首行过大或格式不支持。');
           const header = buffer.subarray(0, end + 1);
-          replaceSessionProvider(header, row.id, row.model_provider, config.target);
+          const next = replaceSessionProvider(header, row.id, row.model_provider, config.target);
           if (!['legacy', 'paginated'].includes(row.history_mode)) fail('未知历史格式，暂不支持自动修复。');
           if (row.history_mode === 'paginated' && !info.history) fail('分页历史索引缺失，暂不支持自动修复。');
+          this.snapshots(db, row.id, header.length, next.length - header.length);
           candidates.set(row.id, { ...row, file, headerHash: digest(header), size: stat.size, mtime: stat.mtimeMs }); entry.eligible = true;
         } catch (e) { entry.reason = e.code ? '会话文件不存在或不可访问' : e.message; }
         entries.push(entry);
@@ -232,7 +234,7 @@ export class SessionRepair {
       await this.checkStopped();
       await this.fault('before-commit'); db.exec('COMMIT'); await this.fault('committed');
       journal.phase = 'applied'; await this.save(journal); this.preview = null;
-      return { count: items.length };
+      return { count: items.length, batchAt: journal.createdAt };
     } catch (error) {
       try { db.exec('ROLLBACK'); } catch {}
       if (prepared) {
@@ -272,7 +274,7 @@ export class SessionRepair {
         db.prepare('UPDATE threads SET model_provider=? WHERE id=?').run(item.source, item.id);
       }
       await this.checkStopped(); db.exec('COMMIT'); journal.phase = 'reverted'; await this.save(journal); this.preview = null;
-      return { count: journal.items.length };
+      return { count: journal.items.length, batchAt: journal.createdAt };
     } catch (e) { try { db.exec('ROLLBACK'); } catch {} throw e; }
     finally { db.close(); }
   }

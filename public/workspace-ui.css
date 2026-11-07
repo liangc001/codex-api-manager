@@ -7,6 +7,34 @@
 #auto-session-repair-control p { margin: 8px 0 0; }
 #auto-session-repair-status { color: var(--muted); }
 #auto-session-repair-status.repair-error { color: var(--red); }
+.auto-repair-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.auto-repair-phase { flex: none; color: var(--accent); border: 1px solid var(--line); border-radius: 5px; padding: 2px 7px; font-size: var(--font-caption); font-weight: 500; }
+#auto-session-repair-control .auto-repair-help { color: var(--muted); font-size: var(--font-caption); font-weight: 400; line-height: 1.75; }
+#auto-session-repair-status { font-size: var(--font-body); font-weight: 500; line-height: 1.7; }
+#auto-repair-blockers { margin: 10px 0; padding-left: 18px; color: var(--muted); font-size: var(--font-caption); line-height: 1.75; }
+.auto-repair-meta { margin-top: 8px; font-size: var(--font-caption); color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; line-height: 1.75; }
+.auto-repair-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.auto-repair-actions button { font-size: var(--font-caption); }
+.auto-repair-overview { width: 100%; display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); padding: 10px 14px; margin-top: 12px; text-align: left; font-size: var(--font-caption); }
+.auto-repair-overview strong { font-size: var(--font-caption); font-weight: 500; flex: none; }
+#auto-repair-overview-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.auto-repair-overview-link { margin-left: auto; flex: none; color: var(--accent); }
+.auto-repair-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.auto-repair-overview[data-phase="error"] .auto-repair-dot, .auto-repair-overview[data-phase="attention"] .auto-repair-dot { background: var(--red); }
+#auto-session-repair-control[data-phase="target"] .auto-repair-phase, #auto-session-repair-control[data-phase="error"] .auto-repair-phase { color: var(--red); }
+#auto-repair-records-dialog { width: min(700px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; overflow: hidden; }
+#auto-repair-records-dialog[open] { display: flex; flex-direction: column; }
+#auto-repair-records-dialog > .dialog-heading { margin: 0; padding: 20px 24px; border-bottom: 1px solid var(--line); flex: none; }
+#auto-repair-records-dialog .dialog-heading p { color: var(--muted); font-size: var(--font-caption); line-height: 1.7; margin: 8px 0 0; }
+.auto-repair-records-body { padding: 20px 24px; overflow: auto; }
+#auto-repair-records-status { font-size: var(--font-body); margin: 0 0 16px; }
+.auto-repair-batch { margin: 10px 0; border: 1px solid var(--line); border-radius: 8px; }
+.auto-repair-batch summary { padding: 12px; font-size: var(--font-body); cursor: pointer; overflow-wrap: anywhere; }
+.auto-repair-record { display: flex; flex-direction: column; gap: 5px; padding: 12px; border-top: 1px solid var(--line); }
+.auto-repair-record strong { font-size: var(--font-body); font-weight: 500; overflow-wrap: anywhere; }
+.auto-repair-record span, .auto-repair-empty { font-size: var(--font-caption); color: var(--muted); overflow-wrap: anywhere; line-height: 1.7; }
+#auto-repair-pending h3 { font-size: var(--font-section); margin: 22px 0 12px; }
+@media (max-width: 480px) { .auto-repair-heading { flex-wrap: wrap; } .auto-repair-overview { flex-wrap: wrap; } #auto-repair-overview-text { flex: 1; min-width: 100px; } #auto-repair-records-dialog > .dialog-heading, .auto-repair-records-body { padding: 18px; } }
 .repair-session > .repair-session-content { min-width: 0; flex: 1; margin: 0; display: block; cursor: pointer; }
 .repair-session .repair-exclude { min-height: 28px; padding: 3px 7px; font-size: 12px; flex: none; align-self: center; }
 .repair-session .repair-exclude[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }

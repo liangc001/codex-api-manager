@@ -92,6 +92,7 @@ else {
       canRun: () => !quitRequested && !restartingCodex && !['downloading', 'installing'].includes(updater?.status.phase),
       onChange: value => { if (window && !window.webContents.isDestroyed()) window.webContents.send('manager:auto-session-repair', value); },
     });
+    await autoSessionRepair.init();
     const { Updater } = await import('../updater.mjs');
     const updateSession = session.fromPartition('codex-update-network');
     updater = new Updater({ version: app.getVersion(), root: path.join(dataRoot, 'cache', 'updates'),
@@ -129,11 +130,17 @@ else {
         });
         const input = data || {};
         if (route === 'auto-session-repair-status') return autoSessionRepair.state();
+        if (route === 'auto-session-repair-details') return autoSessionRepair.details();
+        if (route === 'check-auto-session-repair') {
+          autoSessionRepair.requestCheck(); await autoSessionRepair.tick(); return autoSessionRepair.state();
+        }
         if (route === 'release-session-repair') { autoSessionRepair.release(); return { ok: true }; }
         if (route === 'auto-session-repair-settings') return await manager.exclusive(async () => {
           if (typeof input.enabled !== 'boolean') throw new Error('自动兼容设置无效。');
           await storage.update({ ...storage.settings, autoSessionRepair: input.enabled }, manager, controller.monitor);
-          autoSessionRepair.reset(); return autoSessionRepair.state();
+          autoSessionRepair.reset();
+          setImmediate(() => autoSessionRepair.tick().catch(() => {}));
+          return autoSessionRepair.state();
         });
         if (route === 'exclude-session-repair') return await manager.exclusive(async () => {
           if (typeof input.excluded !== 'boolean' || !sessionRepair.preview?.candidates.has(input.id)) throw new Error('请重新扫描后设置排除对话。');
@@ -147,7 +154,11 @@ else {
           return await manager.exclusive(async () => {
             if (route === 'scan-session-repair') return { result: { ...await sessionRepair.scan(), exclusions: [...(storage.settings.sessionRepairExclusions || [])] } };
             if (controller.monitor.enabled) throw new Error('请先关闭请求监控，再修复或撤回旧对话连接。');
+            const entries = route === 'apply-session-repair' ? (input.ids || []).map(id => sessionRepair.preview?.candidates.get(id)).filter(Boolean) : [];
+            const target = sessionRepair.preview?.config.target;
             const result = route === 'apply-session-repair' ? await sessionRepair.apply(input) : await sessionRepair.undo();
+            if (route === 'apply-session-repair') await autoSessionRepair.record(result, entries, 'manual', target);
+            else await autoSessionRepair.recordUndo(result);
             if (route === 'undo-session-repair' && storage.settings.autoSessionRepair) {
               await storage.update({ ...storage.settings, autoSessionRepair: false }, manager, controller.monitor);
               autoSessionRepair.reset();
@@ -306,7 +317,7 @@ else {
     window.on('closed', () => { window = null; });
     await window.loadFile(htmlPath);
     setTimeout(() => autoSessionRepair.tick().catch(() => {}), 3000).unref();
-    setInterval(() => autoSessionRepair.tick().catch(() => {}), 15000).unref();
+    setInterval(() => autoSessionRepair.tick().catch(() => {}), 5000).unref();
     if (app.isPackaged && !process.env.CODEX_MANAGER_TEST_DATA) {
       const check = () => { if (storage.settings.autoUpdates !== false && !quitRequested) updater.check().catch(() => {}); };
       setTimeout(check, 2000).unref();

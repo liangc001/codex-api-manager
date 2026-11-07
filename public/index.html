@@ -39,6 +39,7 @@
       <div><span class="eyebrow">当前 API</span><span id="connection-status" class="connection-status" role="status"></span><div id="current-name" class="current-name">读取中...</div><div id="current-url" class="mono"></div></div>
       <div id="current-model" class="mono"></div>
     </section>
+    <button id="auto-repair-overview" class="auto-repair-overview" type="button" hidden><span class="auto-repair-dot" aria-hidden="true"></span><strong>旧对话兼容</strong><span id="auto-repair-overview-text"></span><span class="auto-repair-overview-link">查看状态 →</span></button>
     <section class="monitor-section" aria-label="实时请求监控">
       <div class="monitor-heading"><h2><i data-lucide="activity"></i>请求监控</h2><span class="monitor-scope" title="只统计经过本工具代理的请求，不包含其他电脑">仅本机</span><label class="monitor-toggle monitor-switch" title="监控本机请求；开关后需重启 Codex，开启期间保持本工具运行。"><input type="checkbox" id="monitor-toggle" role="switch" aria-label="请求监控"><span id="monitor-toggle-label">未开启</span></label></div>
       <div id="monitor-body" hidden>
@@ -137,7 +138,7 @@
             <h3>问题排查</h3>
       <div class="diagnostic-control"><div><strong>诊断文件</strong><p>不含 Key 或对话</p></div><button id="export-diagnostics" type="button"><i data-lucide="file-down"></i>导出诊断</button></div>
       <div class="diagnostic-control session-repair-entry"><div><strong>旧对话连接</strong><p>修复切换 API 后的 provider 不匹配</p></div><button id="open-session-repair" type="button"><i data-lucide="messages-square"></i>修复旧对话</button></div>
-      <div id="auto-session-repair-control"><label class="auto-repair-toggle"><input id="auto-session-repair-toggle" type="checkbox" role="switch"><span>自动兼容旧对话</span></label><p>后台运行，Codex 完全退出后自动备份并兼容自定义 API 对话。</p><p id="auto-session-repair-status" role="status">未开启</p></div>
+      <div id="auto-session-repair-control"><div class="auto-repair-heading"><label class="auto-repair-toggle"><input id="auto-session-repair-toggle" type="checkbox" role="switch"><span>自动兼容旧对话</span></label><span id="auto-repair-phase" class="auto-repair-phase">未开启</span></div><p class="auto-repair-help">开启后立即保存，每 5 秒检查。退出 Codex App、CLI 和编辑器中的 Codex，关闭请求监控后，等待写入结束再自动处理。请保持本工具运行。</p><p id="auto-session-repair-status" role="status">未开启</p><ul id="auto-repair-blockers"></ul><div id="auto-repair-connection" class="auto-repair-meta"></div><div id="auto-repair-counts" class="auto-repair-meta"></div><div id="auto-repair-times" class="auto-repair-meta"></div><div class="auto-repair-actions"><button id="check-auto-session-repair" type="button">检查状态</button><button id="open-auto-repair-records" type="button">查看处理记录</button></div></div>
 
           </section>
         </div>
@@ -158,6 +159,7 @@
     </div>
     <div class="dialog-actions"><span id="session-repair-count">未选择对话</span><button id="undo-session-repair" type="button">撤回上次修复</button><button id="apply-session-repair" type="button" class="primary" disabled>备份并修复</button></div>
   </dialog>
+  <dialog id="auto-repair-records-dialog" aria-labelledby="auto-repair-records-title"><div class="dialog-heading"><div><h2 id="auto-repair-records-title">旧对话兼容记录</h2><p>仅修改连接归属，聊天正文不变。最近 10 批记录加密保存在本机。</p></div><button id="close-auto-repair-records" type="button" class="icon" aria-label="关闭处理记录"><i data-lucide="x"></i></button></div><div class="auto-repair-records-body"><p id="auto-repair-records-status" role="status"></p><div id="auto-repair-records"></div><div id="auto-repair-pending"></div></div></dialog>
   <script src="./session-repair-ui.js" defer></script>
 </body>
 </html>

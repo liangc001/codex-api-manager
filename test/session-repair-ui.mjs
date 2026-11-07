@@ -27,7 +27,7 @@ try {
     db.prepare('INSERT INTO threads VALUES (?,?,?,?,?,?)').run('22222222-2222-4222-8222-222222222222', path.join(home, 'sessions', 'missing.jsonl'), 'another', '文件不可用的对话', 99, 'legacy'); db.close();
     const { SessionRepair } = process.mainModule.require(app.getAppPath() + '/session-repair.mjs');
     app.repairQA = { running: true };
-    SessionRepair.prototype.checkStopped = async () => { if (app.repairQA.running) throw Object.assign(new Error('请先正常退出 Codex App 和所有 Codex CLI，再重试。'), { kind: 'codex-running' }); };
+    SessionRepair.prototype.checkStopped = async () => { if (app.repairQA.running) throw Object.assign(new Error('请先正常退出 Codex App 和所有 Codex CLI，再重试。'), { kind: 'codex-running', processes: { count: 2, editor: 1 } }); };
     const { AutoSessionRepair } = process.mainModule.require(app.getAppPath() + '/auto-session-repair.mjs');
     const state = AutoSessionRepair.prototype.state;
     AutoSessionRepair.prototype.state = function () { app.repairQA.worker = this; this.quietMs = 0; return state.call(this); };
@@ -73,11 +73,42 @@ try {
     await page.setViewportSize({ width: 1440, height: 950 });
     await page.screenshot({ path: `test-output/auto-session-settings-${theme}.png` });
   }
+  await app.evaluate(({ app }) => { app.repairQA.running = true; });
   await page.locator('#auto-session-repair-toggle').check();
   await page.waitForFunction(() => !document.querySelector('#auto-session-repair-toggle').disabled);
   const tick = () => app.evaluate(async ({ app }) => { await app.repairQA.worker.tick(); return app.repairQA.worker.state(); });
-  await app.evaluate(({ app }) => { app.repairQA.running = true; });
+  await page.waitForFunction(async () => (await api('auto-session-repair-status')).phase === 'waiting');
   assert.equal((await tick()).phase, 'waiting');
+  await page.locator('#check-auto-session-repair').click();
+  await page.waitForFunction(() => document.querySelector('#auto-repair-blockers').textContent.includes('Codex'));
+  assert.equal(await page.locator('#auto-repair-overview').evaluate(node => node.hidden), false);
+  assert.match(await page.locator('#auto-repair-counts').textContent(), /待处理 1.*跳过 1/);
+  assert.match(await page.locator('#auto-repair-blockers').textContent(), /VS Code/);
+  await app.evaluate(({ app }) => {
+    const fs = process.mainModule.require('node:fs'); const path = process.mainModule.require('node:path'); const file = path.join(process.env.CODEX_HOME, 'config.toml');
+    app.repairQA.originalConfig = fs.readFileSync(file, 'utf8');
+    fs.writeFileSync(file, app.repairQA.originalConfig.replace('model_provider="codex_api_manager"', 'model_provider="custom"') + '[model_providers.custom]\nbase_url="https://provider.example/v1"\n');
+  });
+  await page.locator('#check-auto-session-repair').click();
+  await page.waitForFunction(() => document.querySelector('#auto-repair-phase').textContent === '需要切换入口');
+  assert.equal(await page.locator('#auto-repair-blockers li').count(), 2);
+  assert.match(await page.locator('#auto-repair-connection').textContent(), /custom/);
+  for (const theme of ['light', 'dark', 'rainbow']) {
+    await page.evaluate(theme => window.managerTheme.apply(theme), theme);
+    for (const width of [1440, 768, 390]) {
+      await page.setViewportSize({ width, height: 950 });
+      await page.screenshot({ path: `test-output/auto-session-blockers-${theme}-${width}.png` });
+      assert.ok(await page.locator('#settings-dialog').evaluate(d => d.scrollWidth <= d.clientWidth));
+    }
+  }
+  await app.evaluate(({ app }) => { process.mainModule.require('node:fs').writeFileSync(process.mainModule.require('node:path').join(process.env.CODEX_HOME, 'config.toml'), app.repairQA.originalConfig); });
+  await page.locator('#check-auto-session-repair').click();
+  await page.waitForFunction(() => document.querySelector('#auto-repair-phase').textContent === '等待处理');
+  await page.locator('#close-settings').click();
+  await page.setViewportSize({ width: 1440, height: 950 });
+  await page.screenshot({ path: 'test-output/auto-session-overview.png' });
+  await page.locator('#auto-repair-overview').click();
+  assert.equal(await page.locator('#auto-session-repair-control').isVisible(), true);
   await page.locator('#open-session-repair').click();
   await page.waitForFunction(() => document.querySelectorAll('.repair-exclude').length === 1);
   await page.locator('.repair-exclude').click();
@@ -93,6 +124,18 @@ try {
   await page.locator('#close-session-repair').click();
   await app.evaluate(({ app }) => app.repairQA.worker.release());
   assert.equal((await tick()).repaired, 1);
+  await page.waitForFunction(() => document.querySelector('#notice').textContent.includes('可查看处理记录'));
+  await page.locator('#open-auto-repair-records').click();
+  await page.waitForFunction(() => document.querySelector('#auto-repair-records').textContent.includes('自动兼容 1'));
+  assert.match(await page.locator('#auto-repair-records').textContent(), /演示对话.*previous → codex_api_manager/s);
+  for (const theme of ['light', 'dark', 'rainbow']) {
+    await page.evaluate(theme => window.managerTheme.apply(theme), theme);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 950 }); await page.screenshot({ path: `test-output/auto-session-records-${theme}-${width}.png` });
+      assert.ok(await page.locator('#auto-repair-records-dialog').evaluate(d => d.scrollWidth <= d.clientWidth));
+    }
+  }
+  await page.locator('#close-auto-repair-records').click();
   await page.locator('#open-session-repair').click();
   await page.waitForFunction(() => !document.querySelector('#undo-session-repair').disabled);
   await page.locator('#undo-session-repair').click();
@@ -103,6 +146,8 @@ try {
   await page.reload();
   await page.waitForFunction(() => window.codexManager && !document.querySelector('#auto-session-repair-toggle').checked);
   assert.equal(await page.evaluate(async () => (await api('auto-session-repair-status')).enabled), false);
+  const report = await page.evaluate(() => api('auto-session-repair-details'));
+  assert.ok(report.records.length >= 1); assert.ok(report.records[0].undoneAt);
   assert.deepEqual(errors, []);
   console.log('Session repair desktop UI passed: manual repair, automatic migration, running guard, exclusions, undo disables auto, persisted settings, themes and responsive dialogs.');
 } finally { await app.close(); await fs.rm(temp, { recursive: true, force: true }); }
