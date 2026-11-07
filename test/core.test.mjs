@@ -88,6 +88,21 @@ test('TOML changes only connection fields, preserves comments, desktop and proje
   assert.equal(updateConfig(changed, profile), changed);
 });
 
+test('matching URL and key still require provider synchronization when the global provider is custom', async t => {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'manager-provider-sync-')); t.after(() => fs.rm(temp, { recursive: true, force: true }));
+  const codexHome = path.join(temp, 'codex'); await fs.mkdir(codexHome);
+  await fs.writeFile(path.join(codexHome, 'config.toml'), `model_provider="custom"\nmodel="new"\nmodel_reasoning_effort="xhigh"\n[model_providers.custom]\nbase_url="${profile.url}"\nwire_api="responses"\nrequires_openai_auth=true\n`);
+  await fs.writeFile(path.join(codexHome, 'auth.json'), '{"OPENAI_API_KEY":"fixture-key"}');
+  const codec = { encrypt: async x => x, decrypt: async x => x };
+  const manager = new Manager({ codexHome, dataDir: path.join(temp, 'data'), codec }); await manager.init();
+  await manager.save({ ...profile, adapter: 'none', key: 'fixture-key' });
+  const before = await manager.state(); assert.equal(before.profiles[0].active, true); assert.equal(before.current.needsLegacySync, false); assert.equal(before.current.needsProfileSync, false); assert.equal(before.current.needsProviderSync, true);
+  await manager.switchTo(before.profiles[0].id);
+  const after = await manager.state(); assert.equal(after.current.needsProviderSync, false); assert.equal(after.profiles[0].active, true);
+  assert.equal(parseConfig(await fs.readFile(manager.configPath, 'utf8')).model_provider, 'codex_api_manager');
+  assert.equal(JSON.parse(await fs.readFile(manager.authPath, 'utf8')).OPENAI_API_KEY, 'fixture-key');
+});
+
 test('empty, CRLF and quoted TOML keys are valid', () => {
   assert.equal(parseConfig(updateConfig('', profile)).model_provider, 'codex_api_manager');
   const text = '"model" = "old"\r\n[desktop]\r\nfoo = true\r\n';

@@ -234,8 +234,8 @@ function render() {
     const meta = el('div', 'profile-meta'); meta.append(el('span', '', p.model), el('span', '', p.effort));
     info.append(meta);
     const actions = el('div', 'profile-actions');
-    const needsSync = p.active && (state.current.needsLegacySync || state.current.needsProfileSync);
-    const switcher = button('arrow-right-left', needsSync ? state.current.needsProfileSync ? '同步 API 配置' : '同步旧对话连接' : p.active ? '已配置为当前 API' : '切换到此 API', () => {
+    const needsSync = p.active && (state.current.needsLegacySync || state.current.needsProfileSync || state.current.needsProviderSync);
+    const switcher = button('arrow-right-left', needsSync ? state.current.needsProviderSync ? '统一当前 API 的连接入口' : state.current.needsProfileSync ? '同步 API 配置' : '同步旧对话连接' : p.active ? '已配置为当前 API' : '切换到此 API', () => {
       if (!p.hasKey) { openEditor(p); return; }
       run(async () => {
         await api('switch', { id: p.id });
@@ -243,7 +243,7 @@ function render() {
         if (guideStep >= 2) guideStep = p.id === guideProfileId ? 3 : 2;
         notice('已切换，请重启 Codex。');
       });
-    }, needsSync ? '同步' : p.active ? '当前' : '切换', 'switch-button' + (p.active && !needsSync ? '' : ' primary'));
+    }, state.current.needsProviderSync && p.active ? '同步入口' : needsSync ? '同步' : p.active ? '当前' : '切换', 'switch-button' + (p.active && !needsSync ? '' : ' primary'));
     switcher.disabled = p.active && !needsSync;
     const test = button('plug-zap', '测试连接 ' + p.name, () => testProfile(p));
     test.disabled = !p.hasKey;

@@ -229,11 +229,12 @@ export class Manager {
     const active = candidates.find(p => current.model === p.model && current.effort === p.effort) || candidates[0];
     for (const p of profiles) p.active = p.id === active?.id;
     const needsProfileSync = !!active && (current.model !== active.model || current.effort !== active.effort);
+    const needsProviderSync = !!active && current.config.model_provider !== 'codex_api_manager';
     const conflicts = ['OPENAI_API_KEY', 'OPENAI_BASE_URL'].filter(k => !!process.env[k]);
     const needsLegacySync = sharedAuthProviders(current.config).some(([, p]) => p.base_url !== current.url);
     const connectionRevision = hash(JSON.stringify({ provider: current.config.model_provider, providers: current.config.model_providers,
       url: current.url, key: current.key, model: current.model, effort: current.effort }));
-    return { profiles, current: { url: current.url, model: current.model, needsLegacySync, needsProfileSync, connectionRevision }, configDir: this.home, dataDir: this.dataDir,
+    return { profiles, current: { url: current.url, model: current.model, needsLegacySync, needsProfileSync, needsProviderSync, connectionRevision }, configDir: this.home, dataDir: this.dataDir,
       canRestore: !!this.store.lastBackup && (!this.store.lastBackup.origin || this.store.lastBackup.origin === this.origin), conflicts };
   }
   async readKey(id) {

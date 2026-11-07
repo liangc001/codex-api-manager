@@ -95,7 +95,7 @@ export class AutoSessionRepair {
       if (this.status.currentProvider !== config.target || (this.lastInspection && this.lastRevision !== config.revision)) { this.lastInspection = 0; this.entries = []; this.status.counts = null; }
       this.status.currentProvider = config.target;
       const blockers = [];
-      if (config.target !== TARGET) blockers.push('当前连接入口不兼容，请先在 API 列表中点击一次「切换」');
+      if (config.target !== TARGET) blockers.push('当前连接入口不兼容，请在 API 列表中点击「同步入口」或「切换」');
       if (this.monitor.enabled || this.monitor.active.size || this.monitor.recoveryWarning) blockers.push('请关闭请求监控，并等待请求结束、完成配置恢复');
       try { await this.repair.checkStopped(); }
       catch (e) {

@@ -87,8 +87,10 @@ try {
   await app.evaluate(({ app }) => {
     const fs = process.mainModule.require('node:fs'); const path = process.mainModule.require('node:path'); const file = path.join(process.env.CODEX_HOME, 'config.toml');
     app.repairQA.originalConfig = fs.readFileSync(file, 'utf8');
-    fs.writeFileSync(file, app.repairQA.originalConfig.replace('model_provider="codex_api_manager"', 'model_provider="custom"') + '[model_providers.custom]\nbase_url="https://provider.example/v1"\n');
+    fs.writeFileSync(file, app.repairQA.originalConfig.replace('model_provider="codex_api_manager"', 'model_provider="custom"\nmodel="gpt-6-sol"\nmodel_reasoning_effort="xhigh"') + '[model_providers.custom]\nbase_url="https://provider.example/v1"\nwire_api="responses"\nrequires_openai_auth=true\n');
+    fs.writeFileSync(path.join(process.env.CODEX_HOME, 'auth.json'), '{"OPENAI_API_KEY":"isolated-fake-key"}');
   });
+  await page.evaluate(async () => { await api('save', { name: 'Fixture API', url: 'https://provider.example/v1', key: 'isolated-fake-key', model: 'gpt-6-sol', effort: 'xhigh', adapter: 'none' }); await load(); });
   await page.locator('#check-auto-session-repair').click();
   await page.waitForFunction(() => document.querySelector('#auto-repair-phase').textContent === '需要切换入口');
   assert.equal(await page.locator('#auto-repair-blockers li').count(), 2);
@@ -101,7 +103,12 @@ try {
       assert.ok(await page.locator('#settings-dialog').evaluate(d => d.scrollWidth <= d.clientWidth));
     }
   }
-  await app.evaluate(({ app }) => { process.mainModule.require('node:fs').writeFileSync(process.mainModule.require('node:path').join(process.env.CODEX_HOME, 'config.toml'), app.repairQA.originalConfig); });
+  await page.locator('#close-settings').click();
+  const syncProvider = page.getByRole('button', { name: '统一当前 API 的连接入口', exact: true });
+  assert.equal(await syncProvider.isEnabled(), true); assert.equal(await syncProvider.textContent(), '同步入口');
+  await syncProvider.click();
+  await page.waitForFunction(() => document.querySelector('.switch-button').textContent === '当前');
+  await page.locator('#auto-repair-overview').click();
   await page.locator('#check-auto-session-repair').click();
   await page.waitForFunction(() => document.querySelector('#auto-repair-phase').textContent === '等待处理');
   await page.locator('#close-settings').click();
