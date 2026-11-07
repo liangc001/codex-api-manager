@@ -77,7 +77,7 @@ export class AutoSessionRepair {
     finally { this.active = false; }
   }
   async inspect(config) {
-    const preview = await this.repair.scan({ excludeIds: this.storage.settings.sessionRepairExclusions || [], skipProviders: ['openai', 'ollama', 'lmstudio'], offset: this.offset });
+    const preview = await this.repair.scan({ targetProvider: TARGET, excludeIds: this.storage.settings.sessionRepairExclusions || [], skipProviders: ['openai', 'ollama', 'lmstudio'], offset: this.offset });
     this.entries = preview.entries || [];
     this.status.counts = { scanned: this.entries.length, eligible: this.entries.filter(e => e.eligible).length, skipped: this.entries.filter(e => !e.eligible).length, truncated: !!preview.truncated };
     this.status.currentProvider = config.target;
@@ -106,7 +106,7 @@ export class AutoSessionRepair {
       this.status.checkedAt = new Date(this.now()).toISOString();
       if (blockers.length) {
         this.stoppedSince = null;
-        if (config.target === TARGET && (!this.lastInspection || this.now() - this.lastInspection >= 60000)) await this.inspect(config);
+        if (!this.lastInspection || this.now() - this.lastInspection >= 60000) await this.inspect(config);
         this.set(config.target !== TARGET ? 'target' : this.monitor.enabled || this.monitor.active.size || this.monitor.recoveryWarning ? 'monitor' : 'waiting', blockers[0]); return;
       }
       if (this.stoppedSince === null) this.stoppedSince = this.now();

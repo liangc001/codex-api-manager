@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { SessionRepair, replaceSessionProvider } from '../session-repair.mjs';
+import { AutoSessionRepair } from '../auto-session-repair.mjs';
 import { portableCodec } from '../portable.mjs';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -36,6 +37,49 @@ async function setup(t, source, target) {
 }
 function provider(f) { const db = new DatabaseSync(path.join(f.manager.home, 'state_5.sqlite')); try { return db.prepare('SELECT model_provider FROM threads WHERE id=?').get(f.id).model_provider; } finally { db.close(); } }
 function offsets(f) { const db = new DatabaseSync(path.join(f.manager.home, 'thread_history_1.sqlite')); try { return { ...db.prepare('SELECT rollout_byte_offset,rollout_end_byte_offset FROM thread_turns').get(), ...db.prepare('SELECT next_rollout_byte_offset FROM thread_history_projection_state').get() }; } finally { db.close(); } }
+
+test('Windows extended local paths are scanned, migrated and undone with history offsets intact', { skip: process.platform !== 'win32' }, async t => {
+  const f = await setup(t); const before = offsets(f);
+  const db = new DatabaseSync(path.join(f.manager.home, 'state_5.sqlite'));
+  db.prepare('UPDATE threads SET rollout_path=?').run(path.toNamespacedPath(f.file)); db.close();
+  const preview = await f.service.scan(); assert.equal(preview.entries[0].eligible, true);
+  await f.service.apply({ token: preview.token, ids: [f.id] });
+  assert.equal(provider(f), f.target); assert.deepEqual((await fs.readFile(f.file)).subarray((await fs.readFile(f.file)).indexOf(10) + 1), f.tail);
+  await f.service.undo(); assert.equal(provider(f), f.source); assert.deepEqual(await fs.readFile(f.file), f.original); assert.deepEqual(offsets(f), before);
+});
+
+test('extended-length notation never permits external files or linked session files', { skip: process.platform !== 'win32' }, async t => {
+  const f = await setup(t);
+  const external = path.join(f.manager.dataDir, 'external.jsonl'); await fs.writeFile(external, f.original);
+  const db = new DatabaseSync(path.join(f.manager.home, 'state_5.sqlite'));
+  db.prepare('UPDATE threads SET rollout_path=?').run(path.toNamespacedPath(external)); db.close();
+  let preview = await f.service.scan(); assert.equal(preview.entries[0].eligible, false); assert.match(preview.entries[0].reason, /外部会话/);
+  const linked = path.join(f.manager.home, 'sessions', 'linked.jsonl'); await fs.link(external, linked);
+  const update = new DatabaseSync(path.join(f.manager.home, 'state_5.sqlite')); update.prepare('UPDATE threads SET rollout_path=?').run(path.toNamespacedPath(linked)); update.close();
+  preview = await f.service.scan(); assert.equal(preview.entries[0].eligible, false); assert.match(preview.entries[0].reason, /链接文件/);
+  assert.deepEqual(await fs.readFile(external), f.original);
+});
+
+test('fixed-target preview finds chats matching the old global provider but forbids premature migration', async t => {
+  const f = await setup(t, 'custom', 'custom');
+  const config = await fs.readFile(f.manager.configPath);
+  const preview = await f.service.scan({ targetProvider: 'codex_api_manager' });
+  assert.equal(preview.currentProvider, 'custom'); assert.equal(preview.target, 'codex_api_manager'); assert.equal(preview.requiresProviderSync, true);
+  assert.equal(preview.entries.length, 1); assert.equal(preview.entries[0].eligible, true);
+  await assert.rejects(f.service.apply({ token: preview.token, ids: [f.id] }), /同步入口/);
+  assert.equal(provider(f), 'custom'); assert.deepEqual(await fs.readFile(f.file), f.original); assert.deepEqual(await fs.readFile(f.manager.configPath), config);
+});
+
+test('automatic scan finds extended custom chats before sync, then safely migrates after sync', { skip: process.platform !== 'win32' }, async t => {
+  const f = await setup(t, 'custom', 'custom');
+  const db = new DatabaseSync(path.join(f.manager.home, 'state_5.sqlite')); db.prepare('UPDATE threads SET rollout_path=?').run(path.toNamespacedPath(f.file)); db.close();
+  f.manager.exclusive = fn => fn();
+  const worker = new AutoSessionRepair(f.manager, { settings: { autoSessionRepair: true } }, { enabled: false, active: new Map() }, { repair: f.service, quietMs: 0 });
+  await worker.tick(); assert.equal(worker.state().phase, 'target'); assert.equal(worker.state().counts.eligible, 1); assert.equal(provider(f), 'custom');
+  await fs.writeFile(f.manager.configPath, 'model_provider="codex_api_manager"\n[model_providers.codex_api_manager]\nbase_url="https://provider.example/v1"\n');
+  await worker.tick(); assert.equal(worker.state().phase, 'complete'); assert.equal(provider(f), 'codex_api_manager'); assert.equal(worker.details().records[0].count, 1);
+  await f.service.undo(); assert.equal(provider(f), 'custom'); assert.deepEqual(await fs.readFile(f.file), f.original);
+});
 async function apply(f) { const preview = await f.service.scan(); return f.service.apply({ token: preview.token, ids: [f.id] }); }
 
 test('provider migration preserves all history bytes and adjusts paginated byte offsets; exact undo', async t => {

@@ -23,7 +23,7 @@ try {
     fs.writeFileSync(file, header + tail);
     const db = new DatabaseSync(path.join(home, 'state_5.sqlite'));
     db.exec('CREATE TABLE threads(id TEXT PRIMARY KEY,rollout_path TEXT,model_provider TEXT,title TEXT,updated_at INTEGER,history_mode TEXT)');
-    db.prepare('INSERT INTO threads VALUES (?,?,?,?,?,?)').run(id, file, 'previous', '演示对话 · 日常开发', 100, 'legacy');
+    db.prepare('INSERT INTO threads VALUES (?,?,?,?,?,?)').run(id, path.toNamespacedPath(file), 'previous', '演示对话 · 日常开发', 100, 'legacy');
     db.prepare('INSERT INTO threads VALUES (?,?,?,?,?,?)').run('22222222-2222-4222-8222-222222222222', path.join(home, 'sessions', 'missing.jsonl'), 'another', '文件不可用的对话', 99, 'legacy'); db.close();
     const { SessionRepair } = process.mainModule.require(app.getAppPath() + '/session-repair.mjs');
     app.repairQA = { running: true };
@@ -100,6 +100,15 @@ try {
   await page.waitForFunction(() => document.querySelector('#auto-repair-phase').textContent === '需要切换入口');
   assert.equal(await page.locator('#auto-repair-blockers li').count(), 2);
   assert.match(await page.locator('#auto-repair-connection').textContent(), /custom/);
+  assert.match(await page.locator('#auto-repair-counts').textContent(), /待处理 1.*跳过 1/);
+  await page.locator('#open-session-repair').click();
+  await page.waitForFunction(() => document.querySelectorAll('.repair-session').length === 2);
+  assert.equal(await page.locator('#session-repair-target').textContent(), 'codex_api_manager');
+  await page.locator('#session-repair-all').check();
+  assert.equal(await page.locator('#apply-session-repair').isEnabled(), false);
+  assert.match(await page.locator('#session-repair-notice').textContent(), /同步入口/);
+  await page.locator('#close-session-repair').click();
+  await page.locator('#check-auto-session-repair').click();
   for (const theme of ['light', 'dark', 'rainbow']) {
     await page.evaluate(theme => window.managerTheme.apply(theme), theme);
     for (const width of [1440, 768, 390]) {

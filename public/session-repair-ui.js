@@ -127,7 +127,7 @@
     for (const button of get('session-repair-list').querySelectorAll('.repair-exclude')) button.disabled = working;
     get('undo-session-repair').disabled = working || (scan !== null && scan !== undefined && !scan.undo);
     get('session-repair-all').disabled = working || !inputs.length || scan?.pending;
-    get('apply-session-repair').disabled = working || !count || count > 100 || scan?.pending;
+    get('apply-session-repair').disabled = working || !count || count > 100 || scan?.pending || scan?.requiresProviderSync;
     dialog.setAttribute('aria-busy', String(working));
   }
   async function refresh(message) {
@@ -157,8 +157,8 @@
         }
         get('session-repair-list').append(row);
       }
-      if (!scan.entries.length) { const empty = document.createElement('p'); empty.textContent = '没有需要迁移到当前 provider 的对话。'; get('session-repair-list').append(empty); }
-      status(scan.pending ? '上次修复未完成，请先点击「撤回上次修复」恢复。' : message || (scan.truncated ? '仅显示最近 3000 条记录，每次最多修复 100 个对话。' : '请选择要修复的对话，每次最多 100 个。'));
+      if (!scan.entries.length) { const empty = document.createElement('p'); empty.textContent = '没有需要迁移到 codex_api_manager 的对话。'; get('session-repair-list').append(empty); }
+      status(scan.pending ? '上次修复未完成，请先点击「撤回上次修复」恢复。' : scan.requiresProviderSync ? '已扫描；请先在 API 列表点击「同步入口」或「切换」，再重新扫描修复。' : message || (scan.truncated ? '仅显示最近 3000 条记录，每次最多修复 100 个对话。' : '请选择要修复的对话，每次最多 100 个。'));
     } catch (e) { status(message ? message + ' ' + e.message : e.message, true); }
     finally { working = false; controls(); lucide.createIcons(); }
   }

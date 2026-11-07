@@ -152,7 +152,7 @@ else {
         if (['scan-session-repair', 'apply-session-repair', 'undo-session-repair'].includes(route)) {
           autoSessionRepair.hold();
           return await manager.exclusive(async () => {
-            if (route === 'scan-session-repair') return { result: { ...await sessionRepair.scan(), exclusions: [...(storage.settings.sessionRepairExclusions || [])] } };
+            if (route === 'scan-session-repair') return { result: { ...await sessionRepair.scan({ targetProvider: 'codex_api_manager' }), exclusions: [...(storage.settings.sessionRepairExclusions || [])] } };
             if (controller.monitor.enabled) throw new Error('请先关闭请求监控，再修复或撤回旧对话连接。');
             const entries = route === 'apply-session-repair' ? (input.ids || []).map(id => sessionRepair.preview?.candidates.get(id)).filter(Boolean) : [];
             const target = sessionRepair.preview?.config.target;

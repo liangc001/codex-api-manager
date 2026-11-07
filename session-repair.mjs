@@ -9,6 +9,9 @@ const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const inside = (root, file) => { const r = path.relative(root, file); return r && !r.startsWith('..') && !path.isAbsolute(r); };
 const fail = message => { throw new Error(message); };
 const idPattern = /^[a-f0-9-]{36}$/i;
+// Codex stores local Windows paths in both DOS and extended-length notation.
+// Normalize only local drive prefixes; UNC paths still fail the local-home check.
+const localPath = file => path.resolve(process.platform === 'win32' ? file.replace(/^\\\\\?\\(?=[a-z]:\\)/i, '') : file);
 const limits = { header: 4 * 1024 * 1024, file: 128 * 1024 * 1024, batch: 512 * 1024 * 1024 };
 
 export async function assertCodexStopped() {
@@ -86,7 +89,7 @@ export class SessionRepair {
     return { target, revision: digest(text) };
   }
   async database() {
-    const home = await fs.realpath(this.manager.home);
+    const home = localPath(await fs.realpath(this.manager.home));
     const names = (await fs.readdir(home)).filter(n => /^state_\d+\.sqlite$/.test(n)).sort((a, b) => Number(b.match(/\d+/)[0]) - Number(a.match(/\d+/)[0]));
     if (!names.length) fail('没有找到本机 Codex 会话数据库。');
     const state = path.join(home, names[0]); await this.safeFile(state);
@@ -99,11 +102,11 @@ export class SessionRepair {
   }
   async safeFile(file) {
     const stat = await fs.lstat(file);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || path.resolve(await fs.realpath(file)).toLowerCase() !== path.resolve(file).toLowerCase()) fail('不支持链接文件或远程会话，请使用原始本机数据。');
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || localPath(await fs.realpath(file)).toLowerCase() !== localPath(file).toLowerCase()) fail('不支持链接文件或远程会话，请使用原始本机数据。');
     return stat;
   }
   async sessionFile(file, home) {
-    const absolute = path.resolve(file);
+    const absolute = localPath(file);
     if (path.extname(absolute) !== '.jsonl' || !['sessions', 'archived_sessions'].some(folder => inside(path.join(home, folder), absolute))) fail('远程或外部会话不支持修复。');
     await this.safeFile(absolute); return absolute;
   }
@@ -130,8 +133,11 @@ export class SessionRepair {
     await fs.mkdir(path.dirname(this.journal), { recursive: true });
     await atomic(this.journal, await this.manager.codec.encrypt(JSON.stringify(journal)));
   }
-  async scan({ excludeIds = [], skipProviders = [], offset = 0 } = {}) {
-    const config = await this.config(); const info = await this.database(); const db = await this.open(info);
+  async scan({ excludeIds = [], skipProviders = [], offset = 0, targetProvider } = {}) {
+    const current = await this.config();
+    if (targetProvider !== undefined && (typeof targetProvider !== 'string' || !/^[\w.-]{1,100}$/.test(targetProvider))) fail('目标 provider 无效。');
+    const config = { ...current, target: targetProvider ?? current.target };
+    const info = await this.database(); const db = await this.open(info);
     const candidates = new Map(), entries = [];
     try {
       const rows = db.prepare(`SELECT id, rollout_path, model_provider, title, updated_at, history_mode FROM threads WHERE model_provider<>? ${excludeIds.length ? `AND id NOT IN (${excludeIds.map(() => '?').join(',')})` : ''} ${skipProviders.length ? `AND model_provider NOT IN (${skipProviders.map(() => '?').join(',')})` : ''} ORDER BY updated_at DESC,id LIMIT 3001 OFFSET ?`).all(config.target, ...excludeIds, ...skipProviders, offset);
@@ -156,7 +162,7 @@ export class SessionRepair {
       }
       const saved = await this.saved({ allowForeign: true });
       this.preview = { token: crypto.randomUUID(), config, info, candidates, expires: Date.now() + 15 * 60000 };
-      return { token: this.preview.token, target: config.target, entries, truncated: rows.length > 3000, undo: this.isLocal(saved) && saved.phase !== 'reverted', pending: this.isLocal(saved) && !['applied', 'reverted'].includes(saved.phase) };
+      return { token: this.preview.token, target: config.target, currentProvider: current.target, requiresProviderSync: current.target !== config.target, entries, truncated: rows.length > 3000, undo: this.isLocal(saved) && saved.phase !== 'reverted', pending: this.isLocal(saved) && !['applied', 'reverted'].includes(saved.phase) };
     } finally { db.close(); }
   }
   // Only these indexes are supported. Unknown offset-bearing columns stop the operation.
@@ -201,6 +207,7 @@ export class SessionRepair {
     const previous = await this.saved({ allowForeign: true });
     if (this.isLocal(previous) && !['applied', 'reverted'].includes(previous.phase)) fail('上次修复尚未完成，请先点击撤回恢复。');
     const config = await this.config(); if (config.revision !== p.config.revision) fail('当前 API 配置已改变，请重新扫描。');
+    if (config.target !== p.config.target) fail('请先在 API 列表点击「同步入口」或「切换」，统一连接入口后重新扫描。');
     const info = await this.database(); if (JSON.stringify(info) !== JSON.stringify(p.info)) fail('会话数据库已改变，请重新扫描。');
     const db = await this.open(info, true); let journal, total = 0, prepared = false;
     try {
@@ -263,7 +270,7 @@ export class SessionRepair {
         const hash = digest(await fs.readFile(item.file));
         if (hash !== item.beforeHash && hash !== item.afterHash) fail('会话已继续写入或被修改，不能直接撤回；备份已保留。');
         const row = db.prepare('SELECT model_provider,rollout_path FROM threads WHERE id=?').get(item.id);
-        if (!row || path.resolve(row.rollout_path) !== item.file || ![item.source, item.target].includes(row.model_provider)) fail('会话记录已改变，不能自动撤回。');
+        if (!row || localPath(row.rollout_path) !== localPath(item.file) || ![item.source, item.target].includes(row.model_provider)) fail('会话记录已改变，不能自动撤回。');
         this.updateIndexes(db, item.indexes, 'before');
       }
       journal.phase = 'reverting'; await this.save(journal); await this.checkStopped();

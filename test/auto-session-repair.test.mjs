@@ -76,7 +76,9 @@ test('a running Codex does not hide a mismatched target or simultaneous monitori
   const f = fixture(); f.running(true); f.target('custom'); f.monitor.enabled = true;
   await f.worker.tick(); const s = f.worker.state();
   assert.equal(s.phase, 'target'); assert.equal(s.currentProvider, 'custom'); assert.equal(s.blockers.length, 3);
-  assert.equal(f.calls.length, 0); assert.equal(f.scans.length, 0);
+  assert.equal(f.calls.length, 0); assert.equal(f.scans.length, 1);
+  assert.equal(f.scans[0].targetProvider, 'codex_api_manager');
+  assert.equal(s.counts.eligible, 1);
 });
 
 test('running preflight exposes skipped work and scan-only counts without modifying chats', async () => {
