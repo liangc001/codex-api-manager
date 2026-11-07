@@ -32,7 +32,12 @@ try {
     const state = AutoSessionRepair.prototype.state;
     AutoSessionRepair.prototype.state = function () { app.repairQA.worker = this; this.quietMs = 0; return state.call(this); };
   });
-  await page.locator('#settings').click(); await page.locator('#settings-tab-support').click();
+  await page.waitForSelector('#auto-repair-overview:not([hidden])');
+  assert.equal(await page.locator('#auto-repair-overview').isVisible(), true);
+  await page.locator('#open-overview-records').click();
+  await page.waitForSelector('#auto-repair-records-dialog[open]');
+  await page.locator('#close-auto-repair-records').click();
+  await page.locator('#open-compatibility-panel').click();
   await page.locator('#open-session-repair').click();
   await page.waitForFunction(() => document.querySelectorAll('.repair-session').length === 2);
   assert.equal(await page.locator('#session-repair-target').textContent(), 'codex_api_manager');
@@ -100,22 +105,22 @@ try {
     for (const width of [1440, 768, 390]) {
       await page.setViewportSize({ width, height: 950 });
       await page.screenshot({ path: `test-output/auto-session-blockers-${theme}-${width}.png` });
-      assert.ok(await page.locator('#settings-dialog').evaluate(d => d.scrollWidth <= d.clientWidth));
+      assert.ok(await page.locator('#compatibility-dialog').evaluate(d => d.scrollWidth <= d.clientWidth));
     }
   }
-  await page.locator('#close-settings').click();
+  await page.locator('#close-compatibility').click();
   const syncProvider = page.getByRole('button', { name: '统一当前 API 的连接入口', exact: true });
   assert.equal(await syncProvider.isEnabled(), true); assert.equal(await syncProvider.textContent(), '同步入口');
   await syncProvider.click();
   await page.waitForFunction(() => document.querySelector('.switch-button').textContent === '当前');
-  await page.locator('#auto-repair-overview').click();
+  await page.locator('#open-compatibility').click();
   await page.locator('#check-auto-session-repair').click();
   await page.waitForFunction(() => document.querySelector('#auto-repair-phase').textContent === '等待处理');
-  await page.locator('#close-settings').click();
+  await page.locator('#close-compatibility').click();
   await page.setViewportSize({ width: 1440, height: 950 });
   await page.screenshot({ path: 'test-output/auto-session-overview.png' });
-  await page.locator('#auto-repair-overview').click();
-  assert.equal(await page.locator('#auto-session-repair-control').isVisible(), true);
+  await page.locator('#open-compatibility').click();
+  assert.equal(await page.locator('#auto-session-repair-control').isVisible(), true); assert.equal(await page.locator('#settings-dialog').evaluate(d => d.open), false);
   await page.locator('#open-session-repair').click();
   await page.waitForFunction(() => document.querySelectorAll('.repair-exclude').length === 1);
   await page.locator('.repair-exclude').click();

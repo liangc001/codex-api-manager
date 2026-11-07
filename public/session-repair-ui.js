@@ -3,10 +3,16 @@
   const dialog = get('session-repair-dialog');
   get('open-session-repair').hidden = !window.codexManager;
   get('auto-session-repair-control').hidden = !window.codexManager;
+  get('auto-repair-overview').hidden = !window.codexManager;
   let scan, working = false;
   let configuring = false, lastAuto, recordsBusy = false;
   const phases = { off: '未开启', waiting: '等待处理', target: '需要切换入口', monitor: '等待关闭监控', manual: '手动操作中', paused: '已暂缓', attention: '需要恢复', scanning: '检查中', repairing: '处理中', complete: '已完成', idle: '检查完成', error: '处理失败' };
   const when = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '暂无';
+  function node(tag, className, text) { const item = document.createElement(tag); if (className) item.className = className; if (text !== undefined) item.textContent = text; return item; }
+  function timeRow(label, value, extra = '') {
+    const row = node('div', 'auto-repair-time-row'); const time = node('time', '', value ? when(value) + extra : '暂无' + extra);
+    if (value) time.dateTime = new Date(value).toISOString(); row.append(node('span', '', label), time); return row;
+  }
   function autoStatus(value) {
     const previous = lastAuto; lastAuto = value;
     if (!configuring) get('auto-session-repair-toggle').checked = value.enabled;
@@ -15,15 +21,36 @@
     get('auto-session-repair-control').dataset.phase = value.phase;
     get('auto-repair-phase').textContent = phases[value.phase] || '等待检查';
     get('auto-repair-blockers').replaceChildren();
-    for (const text of value.blockers || []) { const li = document.createElement('li'); li.textContent = text; get('auto-repair-blockers').append(li); }
+    for (const text of value.blockers || []) {
+      const concise = text.startsWith('当前连接入口不兼容') ? '在 API 列表点击「同步入口」或「切换」'
+        : text.startsWith('Codex 仍在运行') ? text.includes('VS Code') ? '退出 Codex App、CLI 和 VS Code 中的 Codex' : '退出 Codex App、CLI 和编辑器中的 Codex'
+        : text.startsWith('请关闭请求监控') ? '关闭请求监控，等待请求结束并完成配置恢复' : text;
+      const li = node('li', '', concise); li.title = text; get('auto-repair-blockers').append(li);
+    }
     get('auto-repair-blockers').hidden = !value.blockers?.length;
-    get('auto-repair-connection').textContent = value.currentProvider ? `当前入口 ${value.currentProvider} · 兼容目标 ${value.target}` : '';
-    get('auto-repair-counts').textContent = value.counts ? `本轮预览：待处理 ${value.counts.eligible} · 跳过 ${value.counts.skipped}${value.counts.truncated ? ' · 还有更早的对话' : ''}` : '尚未扫描对话';
-    get('auto-repair-times').textContent = `最近检查：${when(value.checkedAt)}${value.lastRun ? `\n最近处理：${when(value.lastRun.finishedAt)} · ${value.lastRun.count} 个${value.lastRun.undoneAt ? '（已撤回）' : ''}` : '\n尚未处理任何对话'}${value.retryAt ? `\n下次重试：${when(value.retryAt)}` : ''}${value.recordWarning ? '\n' + value.recordWarning : ''}`;
+    const connection = get('auto-repair-connection'); connection.replaceChildren(); connection.hidden = !value.currentProvider;
+    if (value.currentProvider) {
+      connection.append(node('span', 'auto-repair-field-label', '连接入口'), node('code', '', value.currentProvider));
+      if (value.currentProvider !== value.target) connection.append(node('span', 'auto-repair-arrow', '→'), node('code', '', value.target));
+      else connection.append(node('span', 'auto-repair-aligned', '已统一'));
+    }
+    const counts = get('auto-repair-counts'); counts.replaceChildren();
+    if (value.counts) {
+      for (const [label, count] of [['待处理', value.counts.eligible], ['跳过', value.counts.skipped]]) {
+        const stat = node('span', 'auto-repair-count'); stat.append(node('span', '', label + ' '), node('strong', '', count)); counts.append(stat);
+      }
+      if (value.counts.truncated) counts.append(node('span', 'auto-repair-more-count', '还有更早的对话'));
+    } else counts.append(node('span', 'auto-repair-unscanned', '尚未扫描对话'));
+    const times = get('auto-repair-times'); times.replaceChildren(timeRow('最近检查', value.checkedAt));
+    if (value.lastRun) times.append(timeRow('最近处理', value.lastRun.finishedAt, ` · ${value.lastRun.count} 个${value.lastRun.undoneAt ? '（已撤回）' : ''}`));
+    else times.append(node('div', 'auto-repair-no-history', '尚未处理任何对话'));
+    if (value.retryAt) times.append(timeRow('下次重试', value.retryAt));
+    if (value.recordWarning) times.append(node('p', 'repair-error', value.recordWarning));
     get('check-auto-session-repair').disabled = !value.enabled || configuring || ['scanning', 'repairing'].includes(value.phase);
-    get('auto-repair-overview').hidden = !value.enabled && !value.lastRun;
+    get('auto-repair-overview').hidden = !window.codexManager;
     get('auto-repair-overview').dataset.phase = value.phase;
-    get('auto-repair-overview-text').textContent = value.phase === 'off' ? '自动处理已关闭' : value.message;
+    get('auto-repair-overview-text').textContent = value.phase === 'off' ? '开启后，退出 Codex 即可自动处理旧对话' : value.message;
+    get('compatibility-overview-phase').textContent = phases[value.phase] || '等待检查';
     get('auto-repair-overview').title = value.message;
     if (value.phase === 'complete' && previous?.phase !== 'complete') notice(value.message + '，可查看处理记录。');
     if (get('auto-repair-records-dialog').open) renderRecords();
@@ -45,7 +72,9 @@
     catch (e) { get('auto-session-repair-status').textContent = e.message; }
     finally { await syncAuto(); }
   };
-  get('auto-repair-overview').onclick = async () => { await get('settings').onclick(); selectSettingsTab('support'); await syncAuto(); };
+  async function openCompatibility() { if (!get('compatibility-dialog').open) get('compatibility-dialog').showModal(); await syncAuto(); }
+  get('open-compatibility').onclick = get('open-compatibility-panel').onclick = openCompatibility;
+  get('close-compatibility').onclick = () => get('compatibility-dialog').close();
   async function renderRecords() {
     if (recordsBusy) return; recordsBusy = true;
     try {
@@ -53,20 +82,26 @@
       get('auto-repair-records-status').textContent = value.message;
       const history = get('auto-repair-records');
       const expanded = new Map([...history.querySelectorAll('details')].map(d => [d.dataset.batch, d.open])); history.replaceChildren();
-      if (!value.records.length) { const p = document.createElement('p'); p.className = 'auto-repair-empty'; p.textContent = '尚未处理任何对话。开启开关后仍需满足运行条件。'; history.append(p); }
+      if (!value.records.length) {
+        const empty = node('div', 'auto-repair-empty-state'); empty.append(node('strong', '', '还没有处理记录'), node('p', '', '满足运行条件后，处理结果会保存在这里。')); history.append(empty);
+      }
       for (const batch of value.records) {
         const details = document.createElement('details'); details.className = 'auto-repair-batch'; details.dataset.batch = batch.batchAt; details.open = expanded.get(batch.batchAt) ?? batch === value.records[0];
-        const summary = document.createElement('summary'); summary.textContent = `${when(batch.finishedAt)} · ${batch.mode === 'manual' ? '手动修复' : batch.mode === 'recovered' ? '从备份恢复的记录' : '自动兼容'} ${batch.count} 个${batch.undoneAt ? ' · 已撤回' : ' · 已完成'}`;
+        details.dataset.outcome = batch.undoneAt ? 'undone' : 'complete';
+        const summary = node('summary'); const label = node('span', 'auto-repair-batch-label');
+        label.append(node('strong', '', `${batch.mode === 'manual' ? '手动修复' : batch.mode === 'recovered' ? '备份恢复记录' : '自动兼容'} ${batch.count} 个`), node('time', '', when(batch.finishedAt)));
+        const badge = node('span', 'auto-repair-batch-badge', batch.undoneAt ? '已撤回' : '已完成');
+        summary.append(node('span', 'auto-repair-batch-mark', batch.undoneAt ? '↶' : '✓'), label, badge);
         details.append(summary);
-        details.append(recordRow('处理时间', `${when(batch.batchAt)} → ${when(batch.finishedAt)}`));
+        details.append(node('p', 'auto-repair-duration', `${when(batch.batchAt)} → ${when(batch.finishedAt)}`));
         for (const entry of batch.entries) details.append(recordRow(entry.title, `${entry.source} → ${entry.target}`));
         if (batch.undoneAt) details.append(recordRow('撤回时间', when(batch.undoneAt)));
         history.append(details);
       }
       const pending = get('auto-repair-pending'); pending.replaceChildren();
-      const title = document.createElement('h3'); title.textContent = '本轮检查'; pending.append(title);
+      const title = node('h3'); title.append(node('span', '', '本轮检查'), node('small', '', value.counts ? `${value.counts.eligible} 待处理 · ${value.counts.skipped} 已跳过` : '尚未扫描')); pending.append(title);
       if (!value.entries.length) {
-        const p = document.createElement('p'); p.className = 'auto-repair-empty'; p.textContent = value.counts ? '本轮没有待处理或跳过的对话。' : '尚未扫描。先在设置中检查运行条件。'; pending.append(p);
+        const p = document.createElement('p'); p.className = 'auto-repair-empty'; p.textContent = value.counts ? '本轮没有待处理或跳过的对话。' : '尚未扫描。请在旧对话兼容面板中检查运行条件。'; pending.append(p);
       }
       for (const entry of value.entries) pending.append(recordRow(entry.title, entry.eligible ? `待处理 · ${entry.provider} → ${value.target}` : `已跳过 · ${entry.reason}`));
       if (value.entryCount > value.entries.length) pending.append(recordRow('仅显示前 200 条', '其余会话将继续分批检查'));
@@ -78,7 +113,7 @@
     const strong = document.createElement('strong'); strong.textContent = title;
     const small = document.createElement('span'); small.textContent = detail; row.append(strong, small); return row;
   }
-  get('open-auto-repair-records').onclick = () => { get('auto-repair-records-dialog').showModal(); renderRecords(); };
+  get('open-auto-repair-records').onclick = get('open-overview-records').onclick = () => { get('auto-repair-records-dialog').showModal(); renderRecords(); };
   get('close-auto-repair-records').onclick = () => get('auto-repair-records-dialog').close();
   const selected = () => [...get('session-repair-list').querySelectorAll('input:checked:not(:disabled)')].map(input => input.value);
   const status = (message, error = false) => { get('session-repair-notice').textContent = message; get('session-repair-notice').className = error ? 'repair-error' : ''; };
