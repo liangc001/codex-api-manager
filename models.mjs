@@ -2,13 +2,14 @@ import { normalizeUrl } from './core.mjs';
 
 class ModelQueryError extends Error {}
 
-export async function queryModels(url, key, fetcher = fetch) {
+export async function queryModels(url, key, fetcher = fetch, auth) {
   const base = normalizeUrl(url);
   if (typeof key !== 'string' || !key.trim() || key.length > 8192 || /[\r\n]/.test(key)) throw new ModelQueryError('请填写有效的 API Key。');
   key = key.trim();
   let response;
   try {
-    response = await fetcher(base + '/models', { method: 'GET', headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+    const headers = { Accept: 'application/json', ...(auth ? anthropicHeaders(key, auth) : { Authorization: `Bearer ${key}` }) };
+    response = await fetcher(base + (auth ? '/v1/models' : '/models'), { method: 'GET', headers,
       redirect: 'manual', credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(15000) });
     if (response.status === 401) throw new ModelQueryError('Key 无效，无法查询模型。');
     if (response.status === 403) throw new ModelQueryError('此 Key 没有模型列表查询权限，可手动填写模型。');
@@ -37,4 +38,8 @@ export async function queryModels(url, key, fetcher = fetch) {
     if (error instanceof ModelQueryError) throw error;
     throw new ModelQueryError('无法查询模型，请检查地址、网络和 HTTPS 证书。');
   } finally { await response?.body?.cancel().catch(() => {}); }
+}
+
+export function anthropicHeaders(key, auth) {
+  return { 'anthropic-version': '2023-06-01', ...(auth === 'api-key' ? { 'x-api-key': key } : { Authorization: `Bearer ${key}` }) };
 }

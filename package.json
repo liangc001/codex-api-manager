@@ -1,6 +1,6 @@
 {
   "name": "codex-api-manager",
-  "version": "1.0.44",
+  "version": "1.0.50",
   "private": true,
   "type": "module",
   "description": "Local Windows desktop manager for Codex API profiles",
@@ -35,6 +35,7 @@
       "desktop/restart-codex.cjs",
       "desktop/monitor-transport.cjs",
       "core.mjs",
+      "claude.mjs",
       "monitor.mjs",
       "storage.mjs",
       "portable.mjs",

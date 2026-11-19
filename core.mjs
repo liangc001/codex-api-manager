@@ -58,6 +58,32 @@ export function updateConfig(text, profile, { syncLegacy = true } = {}) {
   return text;
 }
 
+// Switch the global ID while keeping the active endpoint and shared authentication.
+// Independent credentials or headers must never be silently repurposed.
+export function updateGlobalProvider(text, id) {
+  if (typeof id !== 'string' || !/^[\w.-]{1,100}$/.test(id) || ['openai', 'ollama', 'lmstudio'].includes(id.toLowerCase())) throw new Error('请选择已配置的自定义连接入口。');
+  const ast = parseForESLint(text).ast, root = ast.body[0], config = getStaticTOMLValue(ast);
+  const current = config.model_providers?.[config.model_provider], target = config.model_providers?.[id];
+  const safe = p => p && p.wire_api === 'responses' && p.requires_openai_auth === true && typeof p.base_url === 'string' && !p.env_key && !p.experimental_bearer_token && !Object.keys({ ...p.http_headers, ...p.env_http_headers }).some(k => k.toLowerCase() === 'authorization');
+  if (!safe(current) || (target && !safe(target))) throw new Error('该入口不是共享 Key 的自定义连接，无法安全切换。');
+  normalizeUrl(current.base_url);
+  const field = (body, name) => body.find(n => n.type === 'TOMLKeyValue' && getStaticTOMLValue(n.key).join('.') === name);
+  const selected = field(root.body, 'model_provider');
+  const table = root.body.find(n => n.type === 'TOMLTable' && n.resolvedKey.join('.') === `model_providers.${id}`);
+  const base = table && field(table.body, 'base_url');
+  if (!selected || (target && !base)) throw new Error('连接入口配置格式不支持自动修改。');
+  const edits = [{ start: selected.value.range[0], end: selected.value.range[1], text: JSON.stringify(id) }];
+  if (target) edits.push({ start: base.value.range[0], end: base.value.range[1], text: JSON.stringify(current.base_url) });
+  else {
+    const nl = text.includes('\r\n') ? '\r\n' : '\n';
+    edits.push({ start: text.length, end: text.length, text: nl + nl + `[model_providers.${JSON.stringify(id)}]` + nl + `name = ${JSON.stringify(id)}` + nl + `base_url = ${JSON.stringify(current.base_url)}` + nl + 'wire_api = "responses"' + nl + 'requires_openai_auth = true' + nl });
+  }
+  for (const edit of edits.sort((a, b) => b.start - a.start)) text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
+  const result = parseConfig(text);
+  if (result.model_provider !== id || result.model_providers[id].base_url !== current.base_url) throw new Error('连接入口校验失败。');
+  return text;
+}
+
 function providerTable(p, nl) {
   return ['[model_providers.codex_api_manager]', `name = ${JSON.stringify(p.name)}`,
     `base_url = ${JSON.stringify(p.url)}`, 'wire_api = "responses"', 'requires_openai_auth = true'].join(nl);
@@ -234,7 +260,7 @@ export class Manager {
     const needsLegacySync = sharedAuthProviders(current.config).some(([, p]) => p.base_url !== current.url);
     const connectionRevision = hash(JSON.stringify({ provider: current.config.model_provider, providers: current.config.model_providers,
       url: current.url, key: current.key, model: current.model, effort: current.effort }));
-    return { profiles, current: { url: current.url, model: current.model, needsLegacySync, needsProfileSync, needsProviderSync, connectionRevision }, configDir: this.home, dataDir: this.dataDir,
+    return { profiles, current: { url: current.url, model: current.model, provider: current.config.model_provider || '', needsLegacySync, needsProfileSync, needsProviderSync, connectionRevision }, configDir: this.home, dataDir: this.dataDir,
       canRestore: !!this.store.lastBackup && (!this.store.lastBackup.origin || this.store.lastBackup.origin === this.origin), conflicts };
   }
   async readKey(id) {
@@ -330,6 +356,31 @@ export class Manager {
       throw error;
     }
   }
+  async globalProviderOptions() {
+    const current = await this.current();
+    return { current: current.config.model_provider || '', options: sharedAuthProviders(current.config).map(([id]) => id).concat(current.config.model_providers?.codex_api_manager ? ['codex_api_manager'] : []).filter((id, i, all) => all.indexOf(id) === i && /^[\w.-]{1,100}$/.test(id) && !['openai', 'ollama', 'lmstudio'].includes(id.toLowerCase())).sort(), revision: hash(current.text) };
+  }
+  async setGlobalProvider(id, revision) {
+    const config = await readOptional(this.configPath), auth = await readOptional(this.authPath);
+    if (!config || !auth || typeof revision !== 'string' || hash(config) !== revision) throw new Error('Codex 配置已改变，请刷新后重试。');
+    let authValue; try { authValue = JSON.parse(auth); } catch { throw new Error('Codex 认证配置无法读取。'); }
+    if (typeof authValue.OPENAI_API_KEY !== 'string' || !authValue.OPENAI_API_KEY) throw new Error('请先切换到已保存 Key 的 API。');
+    const nextConfig = updateGlobalProvider(config, id);
+    if (parseConfig(config).model_provider === id || nextConfig === config) return;
+    const backupName = `backup-${Date.now()}-${crypto.randomUUID()}.json`;
+    await atomicWrite(path.join(this.dataDir, 'backups', backupName), await this.codec.encrypt(JSON.stringify({ config, auth })));
+    if (await readOptional(this.configPath) !== config || await readOptional(this.authPath) !== auth) throw new Error('备份期间 Codex 配置发生变化，请刷新后重试。');
+    const previousBackup = this.store.lastBackup;
+    try {
+      await atomicWrite(this.configPath, nextConfig);
+      this.store.lastBackup = { file: backupName, configHash: hash(nextConfig), authHash: hash(auth), origin: this.origin };
+      await this.persist();
+    } catch (error) {
+      this.store.lastBackup = previousBackup;
+      if (await readOptional(this.configPath) === nextConfig) await atomicWrite(this.configPath, config);
+      throw error;
+    }
+  }
   async writePair(config, auth) {
     for (const [file, content] of [[this.configPath, config], [this.authPath, auth]]) {
       if (content === null) await fs.rm(file, { force: true }); else await atomicWrite(file, content);
@@ -415,8 +466,8 @@ export async function queryUsage(profile, key, fetcher = fetch) {
   const adapters = profile.adapter === 'auto' ? ['sub2api', 'newapi'] : [profile.adapter];
   let lastError;
   for (const adapter of adapters) {
-    const root = profile.url.replace(/\/v1\/?$/, '');
-    const endpoint = adapter === 'newapi' ? root + '/api/usage/token' : profile.url + '/usage';
+      const root = profile.url.replace(/\/v1\/?$/, '');
+      const endpoint = adapter === 'newapi' ? root + '/api/usage/token' : profile.url + (profile.auth ? '/v1/usage' : '/usage');
     try {
       const options = { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10000), redirect: 'manual' };
       let response = await fetcher(endpoint, options);

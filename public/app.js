@@ -1,6 +1,8 @@
 const $ = id => document.getElementById(id);
 let state, editingId = null, busy = false, metricsBusy = false, noticeTimer;
-let transferMode, transferPreview;
+let client = 'codex';
+const isClaude = () => client === 'claude';
+let transferMode, transferPreview, transferClient;
 let editorGeneration = 0, editorKeyChanged = false;
 let modelQueryGeneration = 0;
 let favoritesOnly = false, undoDeleteToken, undoDeleteTimer;
@@ -23,10 +25,12 @@ function rememberRestartBaseline(revision) {
 function renderRestartReminder() {
   if (state) {
     const mode = state.monitor?.enabled ? '监控中' : /^http:\/\/127\.0\.0\.1[:/]/.test(state.current.url || '') ? '代理待恢复' : state.current.url ? '直连' : '未配置';
-    $('connection-status').textContent = mode + (restartNeeded ? ' · 待重启' : '');
-    $('connection-status').classList.toggle('pending', restartNeeded);
+    const pending = !isClaude() && restartNeeded;
+    $('connection-status').textContent = mode + (pending ? ' · 待重启' : '');
+    $('connection-status').classList.toggle('pending', pending);
+    $('connection-status').dataset.mode = state.monitor?.enabled ? 'monitor' : state.current.url ? (mode === '直连' ? 'direct' : 'recovery') : 'empty';
   }
-  const visible = restartNeeded && !!window.codexManager && !restartDismissed && !guideStep;
+  const visible = !isClaude() && restartNeeded && !!window.codexManager && !restartDismissed && !guideStep;
   $('restart-reminder').hidden = !visible;
   document.body.classList.toggle('restart-floating-open', visible);
   if (updateState) renderUpdate(updateState);
@@ -137,7 +141,7 @@ function button(name, title, action, text, cls = 'icon') {
 }
 async function api(route, data) {
   if (window.codexManager) {
-    const result = await window.codexManager.request(route, data);
+    const result = await window.codexManager.request(route, { client, ...data });
     if (result.error) throw new Error(result.error);
     return result;
   }
@@ -153,14 +157,19 @@ function notice(text, error = false) {
 }
 async function load() {
   state = await api('state');
-  if (!guideInitialized) await reconcileRestartReminder();
+  const providerButton = $('open-global-provider');
+  if (providerButton) {
+    providerButton.title = state.current.provider ? `当前入口：${state.current.provider}` : '切换全局入口';
+    $('global-provider-overview').textContent = state.current.provider || '未配置';
+  }
+  if (!guideInitialized && !isClaude()) await reconcileRestartReminder();
   render(); renderMetrics(state.monitor);
-  if (!restartNeeded) rememberRestartBaseline(state.current.connectionRevision);
+  if (!isClaude() && !restartNeeded) rememberRestartBaseline(state.current.connectionRevision);
   if (!guideInitialized) {
     guideInitialized = true;
     let dismissed = false;
     try { dismissed = localStorage.getItem('quick-guide-dismissed') === '1'; } catch {}
-    if (!state.profiles.length && !dismissed) startGuide();
+    if (!isClaude() && !state.profiles.length && !dismissed) startGuide();
   }
   renderGuide();
 }
@@ -170,6 +179,21 @@ async function run(fn) {
   try { await fn(); await load(); } catch (e) { notice(e.message, true); }
   finally { busy = false; document.body.classList.remove('busy'); }
 }
+$('client-switcher').hidden = !window.codexManager;
+async function selectClient(next) {
+  if (busy || next === client || document.querySelector('dialog[open]')) return;
+  const previous = client;
+  busy = true;
+  try {
+    if (guideStep) exitGuide();
+    client = next; $('notice').hidden = true; $('delete-undo').hidden = true; undoDeleteToken = null;
+    $('api-search').value = ''; favoritesOnly = false; $('favorites-only').setAttribute('aria-pressed', 'false');
+    await load();
+  } catch (e) { client = previous; if (state) render(); notice(e.message, true); }
+  finally { busy = false; }
+}
+$('client-codex').onclick = () => selectClient('codex');
+$('client-claude').onclick = () => selectClient('claude');
 function metric(label, value, unit) {
   const d = el('div', 'metric'); d.append(el('span', '', label));
   const strong = el('strong', '', value); if (unit) strong.append(el('small', '', unit)); d.append(strong); return d;
@@ -194,20 +218,31 @@ function renderUsage(p) {
   const refresh = button('refresh-cw', '刷新此 API 用量', () => refreshOne(p)); refresh.disabled = !p.hasKey || p.adapter === 'none'; right.append(refresh); row.append(right); return row;
 }
 function render() {
+  document.body.dataset.client = client;
+  $('client-codex').setAttribute('aria-pressed', String(!isClaude()));
+  $('client-claude').setAttribute('aria-pressed', String(isClaude()));
+  $('help').hidden = isClaude();
   if ($('api-details').open) renderApiDetails();
   if (state.settings && !$('settings-dialog').open) window.managerTheme.apply(state.settings.theme, true);
   const active = state.profiles.find(p => p.active);
-  $('current-name').textContent = active?.name || (state.current.url ? 'Codex 当前连接' : '尚未配置');
-  $('current-url').textContent = state.current.url || '—'; $('current-model').textContent = state.current.model || '';
+  $('current-name').textContent = active?.name || (state.current.url ? (isClaude() ? 'Claude Code 当前连接' : 'Codex 当前连接') : '尚未配置');
+  $('current-url').textContent = state.current.url || '';
+  $('current-url').hidden = !state.current.url;
+  $('current-model').textContent = state.current.model || '';
+  $('current-model-summary').hidden = !state.current.model;
   $('count').textContent = state.profiles.length;
   $('restore').disabled = !state.canRestore;
   $('settings').hidden = !state.settings;
   $('restart-codex').hidden = !window.codexManager;
+  $('restart-codex').title = isClaude() ? '打开新的 Claude Code CLI' : '重启 Codex App';
+  $('restart-codex').setAttribute('aria-label', $('restart-codex').title);
   renderRestartReminder();
   $('import-file').hidden = $('export-file').hidden = !window.codexManager;
   $('export-file').disabled = !state.profiles.length;
-  $('conflicts').hidden = !state.conflicts.length;
-  $('conflicts').textContent = `环境变量可能覆盖连接：${state.conflicts.join('、')}`;
+  $('import').title = `导入当前 ${isClaude() ? 'Claude Code' : 'Codex'} 配置`;
+  $('import').setAttribute('aria-label', $('import').title);
+  $('conflicts').hidden = !state.configError && !state.conflicts.length;
+  $('conflicts').textContent = state.configError || `环境变量可能覆盖连接：${state.conflicts.join('、')}`;
   $('profiles').replaceChildren();
   const groups = new Map();
   const query = $('api-search').value.trim().toLocaleLowerCase();
@@ -231,7 +266,7 @@ function render() {
     title.append(button('panel-top', '查看详情 ' + p.name, () => openApiDetails(p.id), '详情', 'profile-details-button'));
     if (!p.hasKey) title.append(el('span', 'badge empty', '未填写 Key'));
     info.append(title);
-    const meta = el('div', 'profile-meta'); meta.append(el('span', '', p.model), el('span', '', p.effort));
+    const meta = el('div', 'profile-meta'); meta.append(el('span', '', p.model || '默认模型'), el('span', '', isClaude() ? (p.auth === 'api-key' ? 'x-api-key' : 'Bearer') : p.effort));
     info.append(meta);
     const actions = el('div', 'profile-actions');
     const needsSync = p.active && (state.current.needsLegacySync || state.current.needsProfileSync || state.current.needsProviderSync);
@@ -239,6 +274,7 @@ function render() {
       if (!p.hasKey) { openEditor(p); return; }
       run(async () => {
         await api('switch', { id: p.id });
+        if (isClaude()) { notice('已切换，请重新打开 Claude Code CLI。'); return; }
         markConnectionChange();
         if (guideStep >= 2) guideStep = p.id === guideProfileId ? 3 : 2;
         notice('已切换，请重启 Codex。');
@@ -315,9 +351,10 @@ function renderApiDetails() {
   if (u?.checkedAt) row(usage, '最近更新', new Date(u.checkedAt).toLocaleString('zh-CN'), '这是最近一次查询结果，不是实时余额。');
   const config = section('连接配置');
   row(config, 'API 地址', p.url);
-  row(config, '模型', p.model);
+  row(config, '模型', p.model || '默认模型');
   const efforts = { minimal: '最低', low: '低', medium: '中', high: '高', xhigh: '最高' };
-  row(config, '推理强度', efforts[p.effort] || p.effort, '影响模型思考深度；支持情况由服务商决定。');
+  if (isClaude()) row(config, '认证方式', p.auth === 'api-key' ? 'x-api-key' : 'Bearer');
+  else row(config, '推理强度', efforts[p.effort] || p.effort, '影响模型思考深度；支持情况由服务商决定。');
   row(config, '密钥', p.hasKey ? '已保存' : '未填写', '查看或修改 Key，请点击编辑 API。');
   noteBody.append(el('p', '', '本机监控：只看到经过本工具的请求，其他电脑直接访问服务商的请求不可见。'), el('p', '', '其他人 / 全局并发：当前不支持。需要服务商提供账户级请求或并发接口及查询权限；现有用量接口没有这些数据。'));
   content.append(notes);
@@ -364,7 +401,12 @@ async function openEditor(p) {
   resetModels();
   editingId = p?.id || null; const form = $('profile-form'); form.reset(); $('profile-options').open = false;
   $('editor-title').textContent = p ? '编辑 API' : '添加 API';
-  for (const key of ['name', 'url', 'model', 'effort', 'adapter']) if (p) form.elements[key].value = p[key];
+  for (const key of ['name', 'url', 'model', 'effort', 'adapter', 'auth']) if (p && p[key] !== undefined) form.elements[key].value = p[key];
+  $('profile-auth').hidden = !isClaude(); $('profile-effort').hidden = isClaude();
+  form.elements.model.required = !isClaude();
+  if (!p && isClaude()) form.elements.model.value = '';
+  form.elements.model.placeholder = isClaude() ? '留空使用 Claude Code 默认模型' : '';
+  form.elements.url.placeholder = isClaude() ? 'https://example.com/anthropic' : 'https://example.com/v1';
   form.elements.key.type = 'password'; form.elements.key.value = ''; form.elements.key.placeholder = p?.hasKey ? '读取中...' : '填写 Key';
   const submit = form.querySelector('[type="submit"]');
   form.elements.key.disabled = $('toggle-key').disabled = submit.disabled = !!p?.hasKey;
@@ -390,7 +432,7 @@ function resetModels() {
   $('query-models').disabled = false;
   $('query-models').textContent = '查询模型';
 }
-for (const field of ['url', 'key']) $('profile-form').elements[field].addEventListener('input', resetModels);
+for (const field of ['url', 'key', 'auth']) $('profile-form').elements[field].addEventListener('input', resetModels);
 $('query-models').onclick = async () => {
   const form = $('profile-form');
   if (form.elements.key.disabled) return;
@@ -398,12 +440,12 @@ $('query-models').onclick = async () => {
   $('query-models').disabled = true; $('query-models').textContent = '查询中…';
   $('model-picker').hidden = true; $('model-notice').hidden = true;
   try {
-    const { result } = await api('list-models', { id: editingId, url: form.elements.url.value, key: editingId && !editorKeyChanged ? '' : form.elements.key.value });
+    const { result } = await api('list-models', { id: editingId, auth: form.elements.auth.value, url: form.elements.url.value, key: editingId && !editorKeyChanged ? '' : form.elements.key.value });
     if (generation !== modelQueryGeneration || editor !== editorGeneration || !$('editor').open) return;
     $('model-list').replaceChildren(new Option('选择模型', ''), ...result.map(id => new Option(id, id)));
     if (result.includes(form.elements.model.value)) $('model-list').value = form.elements.model.value;
     $('model-picker').hidden = false;
-    $('model-notice').textContent = `${result.length} 个模型 · 列表不代表均支持 Codex`; $('model-notice').className = 'model-notice'; $('model-notice').hidden = false;
+    $('model-notice').textContent = `上游返回 ${result.length} 个模型`; $('model-notice').className = 'model-notice'; $('model-notice').hidden = false;
   } catch (error) {
     if (generation !== modelQueryGeneration || editor !== editorGeneration || !$('editor').open) return;
     $('model-notice').textContent = error.message; $('model-notice').className = 'model-notice error'; $('model-notice').hidden = false;
@@ -417,9 +459,10 @@ $('hide-to-tray').onclick = async () => { try { await api('hide-to-tray', {}); }
 window.codexManager?.onTrayAction?.(async value => {
   if (value.action === 'monitor-stopped') { markConnectionChange(); await load(); return; }
   if (busy || document.querySelector('dialog[open]')) { notice('请先完成当前操作，再使用托盘菜单。'); return; }
-  if (value.action === 'restart') { $('restart-codex').click(); return; }
+  if (value.action === 'restart') { await selectClient(value.client || 'codex'); $('restart-codex').click(); return; }
   if (value.action === 'switch') {
     try {
+      await selectClient(value.client || 'codex');
       $('api-search').value = ''; favoritesOnly = false; $('favorites-only').setAttribute('aria-pressed', 'false');
       await load();
       const article = [...document.querySelectorAll('.profile')].find(node => node.dataset.id === value.id);
@@ -449,6 +492,7 @@ function refreshOne(p) {
 }
 $('add').onclick = () => openEditor();
 $('restart-codex').onclick = () => run(async () => {
+  if (isClaude()) { await api('open-claude-cli', {}); notice('已打开新的 Claude Code CLI。'); return; }
   const b = $('restart-codex'); b.disabled = true;
   try { const result = await api('restart-codex', {}); if (!result.canceled) { setRestartNeeded(false); if (guideStep === 3) guideStep = 4; notice('Codex 已重新打开。'); } }
   finally { b.disabled = false; }
@@ -499,8 +543,8 @@ function updateUsageSelection() {
 }
 $('refresh-all').onclick = () => {
   if (busy) return;
-  let saved = state.settings?.usageSelection;
-  if (!state.settings) { try { saved = JSON.parse(localStorage.getItem('usage-selection')); } catch {} }
+  let saved = isClaude() ? undefined : state.settings?.usageSelection;
+  if (!state.settings || isClaude()) { try { saved = JSON.parse(localStorage.getItem(isClaude() ? 'claude-usage-selection' : 'usage-selection')); } catch {} }
   const selection = Array.isArray(saved) ? new Set(saved) : null;
   $('usage-list').replaceChildren();
   for (const p of state.profiles) {
@@ -535,10 +579,10 @@ $('usage-form').onsubmit = event => {
   $('refresh-all').disabled = true;
   $('submit-usage').disabled = true;
   try {
-    if (state.settings) {
+    if (state.settings && !isClaude()) {
       const s = state.settings;
       await api('settings', { dataDir: s.dataDir, logging: s.logging, retentionDays: s.retentionDays, autoUpdates: s.autoUpdates, usageSelection: targets.map(p => p.id) });
-    } else { try { localStorage.setItem('usage-selection', JSON.stringify(targets.map(p => p.id))); } catch {} }
+    } else { try { localStorage.setItem(isClaude() ? 'claude-usage-selection' : 'usage-selection', JSON.stringify(targets.map(p => p.id))); } catch {} }
     $('usage-dialog').close();
     let errors = 0;
     for (const p of targets) { notice(`正在查询 ${p.name}…`); const { result } = await api('refresh', { id: p.id }); if (result.status === 'error') errors++; await load(); }
@@ -550,6 +594,7 @@ $('import').onclick = () => run(async () => { await api('import', {}); notice('�
 $('restore').onclick = () => run(async () => {
   const wasPending = restartNeeded;
   await api('restore', {});
+  if (isClaude()) { notice('已撤销，请重新打开 Claude Code CLI。'); return; }
   state = await api('state');
   const needsRestart = restartBaseline ? state.current.connectionRevision !== restartBaseline : !wasPending;
   setRestartNeeded(needsRestart);
@@ -560,6 +605,7 @@ $('monitor-toggle').onchange = e => {
   run(async () => {
     const response = await api('monitor', { enabled });
     if (response.canceled) return;
+    if (isClaude()) { notice(`监控已${enabled ? '开启' : '关闭'}，请重新打开 Claude Code CLI。`); return; }
     markConnectionChange();
     if (response.result?.restarted) { await load(); setRestartNeeded(false); }
     notice(enabled ? '监控已开启，请重启 Codex。' : response.result?.restarted ? '监控已关闭，Codex 已重新加载直连配置。'
@@ -585,6 +631,8 @@ function renderSettings() {
   $('log-path').textContent = s.logDir;
   $('settings-path').textContent = s.settingsFile;
   $('codex-path').textContent = state.configDir;
+  $('client-config-label').textContent = isClaude() ? 'Claude Code 配置目录' : 'Codex 配置目录';
+  $('codex-path').nextElementSibling.title = '打开' + $('client-config-label').textContent;
   $('cache-path').textContent = state.cacheDir;
   settingsNotice(s.warning || '', !!s.warning);
 }
@@ -662,9 +710,9 @@ function updateTransferSelection() {
   $('transfer-command').textContent = `${transferMode === 'import' ? '导入' : '导出'} ${selected}`;
   $('export-key-warning').hidden = transferMode !== 'export';
 }
-function openTransfer(mode, profiles, preview) {
-  transferMode = mode; transferPreview = preview;
-  $('transfer-title').textContent = mode === 'import' ? '导入 API' : '导出 API';
+function openTransfer(mode, profiles, preview, client) {
+  transferMode = mode; transferPreview = preview; transferClient = client;
+  $('transfer-title').textContent = (mode === 'import' ? '导入 ' : '导出 ') + (client === 'claude' ? 'Claude API' : 'API');
   $('import-source').hidden = mode !== 'import';
   $('import-file-name').textContent = preview?.fileName || '';
   $('import-duplicates').hidden = mode !== 'import'; $('duplicate-mode').value = 'skip';
@@ -686,29 +734,30 @@ function openTransfer(mode, profiles, preview) {
   if (!$('transfer-dialog').open) $('transfer-dialog').showModal();
   icons();
 }
-async function chooseImport() {
+async function chooseImport(target = client) {
   if (busy) return;
   busy = true;
   try {
-    const result = await api('preview-import', {});
+    const result = await api('preview-import', { client: target });
     if (result.canceled) { if (transferMode === 'import' && $('transfer-dialog').open) $('transfer-dialog').close(); return; }
-    openTransfer('import', result.preview.profiles, result.preview);
+    openTransfer('import', result.preview.profiles, result.preview, target);
   } catch (e) {
     if ($('transfer-dialog').open) { transferPreview = null; $('submit-transfer').disabled = true; transferNotice(e.message); }
     else notice(e.message, true);
   } finally { busy = false; }
 }
-$('import-file').onclick = $('choose-import-file').onclick = chooseImport;
+$('import-file').onclick = () => chooseImport();
+$('choose-import-file').onclick = () => chooseImport(transferClient);
 $('export-file').onclick = async () => {
   if (busy) return;
-  try { await load(); if (state.profiles.length) openTransfer('export', state.profiles); }
+  try { await load(); if (state.profiles.length) openTransfer('export', state.profiles, null, client); }
   catch (e) { notice(e.message, true); }
 };
 $('close-transfer').onclick = $('cancel-transfer').onclick = () => { if (!busy) $('transfer-dialog').close(); };
 $('transfer-dialog').addEventListener('cancel', event => { if (busy) event.preventDefault(); });
 $('transfer-dialog').addEventListener('close', () => {
   transferPreview = null;
-  if (window.codexManager) api('discard-import', {}).catch(() => {});
+  if (window.codexManager) api('discard-import', { client: transferClient }).catch(() => {});
 });
 $('transfer-all').onchange = event => { for (const input of document.querySelectorAll('#transfer-list input:not(:disabled)')) input.checked = event.target.checked; updateTransferSelection(); };
 $('transfer-form').onsubmit = async event => {
@@ -717,19 +766,21 @@ $('transfer-form').onsubmit = async event => {
   try {
     const selected = selectedTransfer();
     const response = transferMode === 'export'
-      ? await api('export-profiles', { ids: selected })
-      : await api('apply-import', { token: transferPreview?.token, indices: selected.map(Number), duplicates: $('duplicate-mode').value });
+      ? await api('export-profiles', { client: transferClient, ids: selected })
+      : await api('apply-import', { client: transferClient, token: transferPreview?.token, indices: selected.map(Number), duplicates: $('duplicate-mode').value });
     if (response.canceled) return;
-    $('transfer-dialog').close(); await load();
+    $('transfer-dialog').close();
     const result = response.result;
-    notice(transferMode === 'export' ? `已导出 ${result.count} 个 API` : `已导入 ${result.added + result.updated} 个 API${result.skipped ? `，跳过 ${result.skipped} 个` : ''}`);
+    const message = transferMode === 'export' ? `已导出 ${result.count} 个 API` : `已导入 ${result.added + result.updated} 个 API${result.skipped ? `，跳过 ${result.skipped} 个` : ''}`;
+    await load(); notice(message);
   } catch (e) { transferNotice(e.message); }
   finally { busy = false; $('transfer-form').removeAttribute('aria-busy'); }
 };
 setInterval(async () => {
   if (metricsBusy || !state) return;
   metricsBusy = true;
-  try { renderMetrics(await api('metrics')); } catch {} finally { metricsBusy = false; }
+  const requestedClient = client;
+  try { const metrics = await api('metrics'); if (client === requestedClient && document.body.dataset.client === client) renderMetrics(metrics); } catch {} finally { metricsBusy = false; }
 }, 1000);
 function layoutFloatingReminders() {
   const updateHeight = $('update-banner').hidden ? 0 : $('update-banner').offsetHeight;

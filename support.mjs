@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { atomicWrite } from './core.mjs';
+import { anthropicHeaders } from './models.mjs';
 
 const advice = {
   ok: ['连接成功', '模型已完成测试请求。'],
@@ -71,6 +72,18 @@ export async function testConnection(profile, key, fetcher = fetch) {
   const start = Date.now(); let status;
   const result = kind => safeTestResult({ kind, httpStatus: status, durationMs: Date.now() - start, checkedAt: new Date().toISOString() });
   try {
+    if (profile.auth) {
+      if (!profile.model) return result('model');
+      const response = await fetcher(profile.url + '/v1/messages', { method: 'POST', redirect: 'manual', credentials: 'omit',
+        headers: { ...anthropicHeaders(key, profile.auth), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: profile.model, max_tokens: 12, messages: [{ role: 'user', content: '你好' }] }),
+        signal: AbortSignal.timeout(45000) });
+      status = response.status;
+      if (status >= 300 && status < 400) { await response.body?.cancel(); return result('redirect'); }
+      let raw; try { raw = JSON.parse(await readBounded(response)); } catch {}
+      return result(response.ok && raw?.type === 'message' && Array.isArray(raw.content) ? 'ok'
+        : raw?.error || !response.ok ? classifyFailure(status, raw?.error?.message, raw?.error?.type) : 'format');
+    }
     const response = await fetcher(profile.url + '/responses', { method: 'POST', redirect: 'manual',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: profile.model, instructions: 'Reply briefly in Chinese.',
@@ -152,10 +165,10 @@ export async function diagnosticReport(manager, storage, monitor, version) {
     events: rows.sort((a, b) => a.time.localeCompare(b.time)).slice(-200) };
 }
 
-export async function exportDiagnostics(file, manager, storage, monitor, version) {
+export async function exportDiagnostics(file, manager, storage, monitor, version, protectedHomes = []) {
   if (path.extname(file).toLowerCase() !== '.json') throw new Error('请保存为 .json 文件。');
   const target = path.join(await fs.realpath(path.dirname(file)), path.basename(file));
-  for (const folder of [manager.dataDir, manager.home]) {
+  for (const folder of [manager.dataDir, manager.home, ...protectedHomes]) {
     const actual = await fs.realpath(folder).catch(e => { if (e.code === 'ENOENT') return path.resolve(folder); throw e; });
     const relative = path.relative(actual, target);
     if (!relative || (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative))) {

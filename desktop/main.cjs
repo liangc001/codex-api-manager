@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, session, shell, Tray, Menu } = requ
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
+const { spawn, execFile } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const codexRestarter = require('./restart-codex.cjs');
 
@@ -10,6 +11,8 @@ let manager;
 let controller;
 let storage;
 let transfer;
+let claudeTransfer;
+let claudeMonitor;
 let sessionRepair;
 let autoSessionRepair;
 let finishingQuit = false;
@@ -26,24 +29,31 @@ async function restartForDirectConnection() {
   await storage.record('operation', { operation: 'restart-codex', outcome: 'ok' });
 }
 function showWindow() { if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } }
-function trayAction(action, id) {
+function trayAction(action, id, client) {
   showWindow();
-  if (!quitRequested && window && !window.webContents.isDestroyed()) window.webContents.send('manager:tray-action', { action, id });
+  if (!quitRequested && window && !window.webContents.isDestroyed()) window.webContents.send('manager:tray-action', { action, id, client });
 }
-function renderTray(state) {
+let codexTrayState, claudeTrayState;
+function renderTray(state, client = 'codex') {
   if (!tray || tray.isDestroyed()) return;
-  const current = state.profiles.find(p => p.active);
+  if (client === 'claude') claudeTrayState = state; else codexTrayState = state;
+  const current = codexTrayState?.profiles.find(p => p.active);
   tray.setToolTip('Codex API Manager' + (current ? ` · ${current.name}` : ''));
-  const groups = new Map();
-  for (const p of state.profiles) {
-    if (!groups.has(p.url)) groups.set(p.url, []);
-    groups.get(p.url).push({ label: p.name.replace(/&/g, '&&'), type: 'checkbox', checked: p.active, enabled: p.hasKey,
-      click: () => trayAction('switch', p.id) });
+  function group(profiles, target) {
+    const groups = new Map();
+    for (const p of profiles || []) {
+      if (!groups.has(p.url)) groups.set(p.url, []);
+      groups.get(p.url).push({ label: p.name.replace(/&/g, '&&'), type: 'checkbox', checked: p.active, enabled: p.hasKey,
+        click: () => trayAction('switch', p.id, target) });
+    }
+    return groups.size ? [...groups].map(([url, submenu]) => ({ label: url.replace(/&/g, '&&'), submenu })) : [{ label: '暂无 API', enabled: false }];
   }
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '打开主窗口', click: showWindow },
-    { label: '切换 API', submenu: groups.size ? [...groups].map(([url, submenu]) => ({ label: url.replace(/&/g, '&&'), submenu })) : [{ label: '暂无 API', enabled: false }] },
+    { label: '切换 Codex API', submenu: group(codexTrayState?.profiles, 'codex') },
+    { label: '切换 Claude API', submenu: group(claudeTrayState?.profiles, 'claude') },
     { label: '重启 Codex', click: () => trayAction('restart') },
+    { label: '打开 Claude Code CLI', click: () => trayAction('restart', undefined, 'claude') },
     { label: '收起到托盘', click: () => window?.hide() },
     { type: 'separator' }, { label: '退出', click: () => { if (controller.monitor.enabled) { showWindow(); window.close(); } else app.quit(); } },
   ]));
@@ -84,7 +94,15 @@ else {
     controller = new MonitorController(manager, { requester: createMonitorRequester(monitorSession) });
     await controller.init();
     const { TransferService } = await import('../transfer.mjs');
-    transfer = new TransferService(manager, controller.monitor);
+    const { ClaudeManager, ClaudeMonitor, claudeProfile } = await import('../claude.mjs');
+    const claude = new ClaudeManager({ dataDir: manager.dataDir, codec: manager.codec });
+    await claude.init();
+    claude.storage = storage;
+    claudeMonitor = new ClaudeMonitor(claude, { requester: createMonitorRequester(session.fromPartition('claude-monitor-network')) });
+    await claudeMonitor.recover().catch(() => { claudeMonitor.recoveryWarning = 'Claude 监控配置未自动恢复，请检查 Claude 用户设置并重新打开工具。'; });
+    transfer = new TransferService(manager, controller.monitor, { protectedHomes: [claude.home] });
+    claudeTransfer = new TransferService(claude, claudeMonitor, { format: 'claude-code-api-manager', validate: claudeProfile,
+      serialize: ({ name, url, model, auth, adapter }) => ({ name, url, model, auth, adapter: adapter ?? 'auto' }), protectedHomes: [manager.home] });
     const { SessionRepair } = await import('../session-repair.mjs');
     sessionRepair = new SessionRepair(manager);
     const { AutoSessionRepair } = await import('../auto-session-repair.mjs');
@@ -107,7 +125,10 @@ else {
       }
       try {
         if (typeof route !== 'string' || JSON.stringify(data ?? {}).length > 32000) throw new Error('请求格式不正确。');
-        if (route === 'metrics') return controller.monitor.summary();
+        const input = data || {};
+        const isClaude = input.client === 'claude';
+        const targetManager = isClaude ? claude : manager, targetMonitor = isClaude ? claudeMonitor : controller.monitor;
+        if (route === 'metrics') return targetMonitor.summary();
         if (route === 'update-status') return updater.state();
         if (quitRequested) throw new Error('程序正在等待请求完成并退出。');
         if (route === 'check-update') return await updater.check();
@@ -124,13 +145,37 @@ else {
             return { running: target.running, startedAt: target.startedAt ?? null };
           } catch { return { running: null, startedAt: null }; }
         }
-        if (route === 'state') return await manager.exclusive(async () => {
-          const state = { ...await controller.state(), settings: storage.state(), cacheDir: app.getPath('userData'), secretProtection: 'portable' };
-          renderTray(state); return state;
+        if (route === 'state') return await targetManager.exclusive(async () => {
+          const current = isClaude ? await claude.state() : await controller.state();
+          if (isClaude && claudeMonitor.enabled) {
+            for (const p of current.profiles) p.active = p.id === claudeMonitor.profile.id;
+            current.current = { url: claudeMonitor.profile.url, model: claudeMonitor.profile.model };
+            current.canRestore = false;
+          }
+          renderTray(current, isClaude ? 'claude' : 'codex');
+          return { ...current, monitor: targetMonitor.summary(), settings: storage.state(), cacheDir: app.getPath('userData'), secretProtection: 'portable' };
         });
-        const input = data || {};
+        if (isClaude && route === 'monitor') {
+          return { ok: true, result: await claude.exclusive(async () => {
+            if (input.enabled === true && !claudeMonitor.enabled) {
+              const active = (await claude.state()).profiles.find(p => p.active);
+              await claudeMonitor.enable(active?.id);
+            } else if (input.enabled === false) await claudeMonitor.disable();
+          }) };
+        }
         if (route === 'auto-session-repair-status') return autoSessionRepair.state();
         if (route === 'auto-session-repair-details') return autoSessionRepair.details();
+        if (route === 'global-provider-options') return await manager.exclusive(async () => {
+          const result = await manager.globalProviderOptions();
+          try { result.options = [...new Set([...result.options, ...await sessionRepair.providerIds()])].sort(); } catch { /* Configuration options remain usable if history is unavailable. */ }
+          return result;
+        });
+        if (route === 'set-global-provider') return await manager.exclusive(async () => {
+          if (controller.monitor.enabled || controller.monitor.active.size || controller.monitor.recoveryWarning) throw new Error('请先关闭请求监控并等待请求结束。');
+          await manager.setGlobalProvider(input.id, input.revision);
+          autoSessionRepair.requestCheck();
+          return { ok: true };
+        });
         if (route === 'check-auto-session-repair') {
           autoSessionRepair.requestCheck(); await autoSessionRepair.tick(); return autoSessionRepair.state();
         }
@@ -152,7 +197,7 @@ else {
         if (['scan-session-repair', 'apply-session-repair', 'undo-session-repair'].includes(route)) {
           autoSessionRepair.hold();
           return await manager.exclusive(async () => {
-            if (route === 'scan-session-repair') return { result: { ...await sessionRepair.scan({ targetProvider: 'codex_api_manager' }), exclusions: [...(storage.settings.sessionRepairExclusions || [])] } };
+            if (route === 'scan-session-repair') return { result: { ...await sessionRepair.scan({ targetProvider: 'codex_api_manager', includeAligned: true }), exclusions: [...(storage.settings.sessionRepairExclusions || [])] } };
             if (controller.monitor.enabled) throw new Error('请先关闭请求监控，再修复或撤回旧对话连接。');
             const entries = route === 'apply-session-repair' ? (input.ids || []).map(id => sessionRepair.preview?.candidates.get(id)).filter(Boolean) : [];
             const target = sessionRepair.preview?.config.target;
@@ -185,19 +230,27 @@ else {
           });
         }
         if (route === 'hide-to-tray') { window.hide(); return { ok: true }; }
-        if (route === 'list-models') return { ok: true, result: await manager.listModels(input, (url, options) => session.fromPartition('codex-model-network').fetch(url, options)) };
+        if (route === 'open-claude-cli' && isClaude) {
+          await new Promise((resolve, reject) => execFile('where.exe', ['claude'], { windowsHide: true, timeout: 5000 },
+            error => error ? reject(new Error('未在 PATH 找到 Claude Code，请从已配置的终端运行 claude。')) : resolve()));
+          const child = spawn('cmd.exe', ['/d', '/k', 'claude'], { cwd: app.getPath('home'), detached: true, stdio: 'ignore', windowsHide: false });
+          await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', () => reject(new Error('无法打开 Claude Code CLI。'))); });
+          child.unref(); return { ok: true };
+        }
+        if (route === 'list-models') return { ok: true, result: await targetManager.listModels(input, (url, options) => session.fromPartition(isClaude ? 'claude-model-network' : 'codex-model-network').fetch(url, options)) };
         if (route === 'test-connection') {
-          const profile = manager.store.profiles.find(p => p.id === input.id);
+          const profile = targetManager.store.profiles.find(p => p.id === input.id);
           if (!profile?.encryptedKey) throw new Error('请先填写此 API 的 Key。');
+          if (!profile.model) throw new Error('请先查询并选择模型，或手动填写模型 ID。');
           const confirmation = await dialog.showMessageBox(window, { type: 'question', title: '测试连接',
             message: `向“${profile.name}”发送一次“你好”？`,
             detail: `模型：${profile.model} · 会产生少量用量`,
             buttons: ['取消', '测试'], defaultId: 0, cancelId: 0 });
           if (confirmation.response !== 1) return { canceled: true };
-          return { ok: true, result: await manager.exclusive(async () => {
-            const current = manager.store.profiles.find(p => p.id === input.id);
+          return { ok: true, result: await targetManager.exclusive(async () => {
+            const current = targetManager.store.profiles.find(p => p.id === input.id);
             if (current !== profile) throw new Error('此 API 已被修改，请重新测试。');
-            const result = await manager.testConnection(input.id);
+            const result = await targetManager.testConnection(input.id);
             await storage.record('operation', { operation: route, outcome: result.status, profileId: input.id,
               status: result.httpStatus, durationMs: result.durationMs, errorKind: result.kind });
             return result;
@@ -205,10 +258,10 @@ else {
         }
         if (route === 'export-diagnostics') {
           const chosen = await dialog.showSaveDialog(window, { title: '导出诊断信息（不含 Key 和对话）',
-            defaultPath: path.join(executableDir, 'codex-api-diagnostics.json'), filters: [{ name: '诊断信息', extensions: ['json'] }] });
+            defaultPath: path.join(executableDir, isClaude ? 'claude-api-diagnostics.json' : 'codex-api-diagnostics.json'), filters: [{ name: '诊断信息', extensions: ['json'] }] });
           if (chosen.canceled) return { canceled: true };
           const { exportDiagnostics } = await import('../support.mjs');
-          await manager.exclusive(() => exportDiagnostics(chosen.filePath, manager, storage, controller.monitor, app.getVersion()));
+          await targetManager.exclusive(() => exportDiagnostics(chosen.filePath, targetManager, storage, targetMonitor, app.getVersion(), [isClaude ? manager.home : claude.home]));
           await storage.record('operation', { operation: route, outcome: 'ok' });
           return { ok: true };
         }
@@ -230,27 +283,29 @@ else {
             throw error;
           } finally { restartingCodex = false; }
         }
-        if (route === 'discard-import') { transfer.discard(); return { ok: true }; }
+        const selectedTransfer = input.client === 'claude' ? claudeTransfer : transfer;
+        const selectedManager = input.client === 'claude' ? claude : manager;
+        if (route === 'discard-import') { selectedTransfer.discard(); return { ok: true }; }
         if (route === 'preview-import') {
-          transfer.discard();
+          selectedTransfer.discard();
           const chosen = await dialog.showOpenDialog(window, { title: '导入配置', properties: ['openFile'], filters: [{ name: 'API 配置', extensions: ['json'] }] });
           if (chosen.canceled) return { canceled: true };
-          return { preview: await manager.exclusive(() => transfer.openFile(chosen.filePaths[0])) };
+          return { preview: await selectedManager.exclusive(() => selectedTransfer.openFile(chosen.filePaths[0])) };
         }
         if (route === 'apply-import') {
-          const result = await manager.exclusive(() => transfer.apply(input));
+          const result = await selectedManager.exclusive(() => selectedTransfer.apply(input));
           await storage.record('operation', { operation: 'import', outcome: 'ok' });
           return { ok: true, result };
         }
         if (route === 'export-profiles') {
-          const chosen = await dialog.showSaveDialog(window, { title: '导出配置', defaultPath: path.join(executableDir, 'codex-api-profiles.json'), filters: [{ name: 'API 配置', extensions: ['json'] }] });
+          const chosen = await dialog.showSaveDialog(window, { title: '导出配置', defaultPath: path.join(executableDir, input.client === 'claude' ? 'claude-api-profiles.json' : 'codex-api-profiles.json'), filters: [{ name: 'API 配置', extensions: ['json'] }] });
           if (chosen.canceled) return { canceled: true };
-          const result = await manager.exclusive(() => transfer.exportTo(chosen.filePath, input.ids));
+          const result = await selectedManager.exclusive(() => selectedTransfer.exportTo(chosen.filePath, input.ids));
           await storage.record('operation', { operation: 'export', outcome: 'ok' });
           return { ok: true, result };
         }
         if (route === 'open-directory') {
-          const folders = { data: manager.dataDir, logs: storage.logDir, config: manager.home, settings: storage.root, cache: app.getPath('userData') };
+          const folders = { data: manager.dataDir, logs: storage.logDir, config: targetManager.home, settings: storage.root, cache: app.getPath('userData') };
           if (!Object.hasOwn(folders, input.kind)) throw new Error('目录类型无效。');
           await fs.mkdir(folders[input.kind], { recursive: true });
           if (await shell.openPath(folders[input.kind])) throw new Error('无法打开文件夹。');
@@ -262,7 +317,28 @@ else {
           if (result.response === 1) await manager.exclusive(() => storage.clearLogs());
           return { ok: true, cleared: result.response === 1 };
         }
-        const actions = {
+        const actions = isClaude ? {
+          'read-key': async () => ({ key: await claude.readKey(input.id) }),
+          save: () => {
+            if (claudeMonitor.enabled && input.id === claudeMonitor.profile.id) throw new Error('请先关闭 Claude 请求监控，再编辑当前 API。');
+            return claude.save(input);
+          },
+          delete: () => {
+            if (claudeMonitor.enabled && input.id === claudeMonitor.profile.id) throw new Error('无法删除正在监控的 API。');
+            return claude.remove(input.id);
+          },
+          'undo-delete': () => claude.undoRemove(input.token), favorite: () => claude.setFavorite(input.id, input.favorite),
+          switch: async () => {
+            if (claudeMonitor.recoveryWarning) throw new Error(claudeMonitor.recoveryWarning);
+            const monitored = claudeMonitor.enabled;
+            if (monitored) await claudeMonitor.disable();
+            await claude.switchTo(input.id);
+            if (monitored) await claudeMonitor.enable(input.id);
+          },
+          restore: () => { if (claudeMonitor.enabled) throw new Error('请先关闭 Claude 请求监控。'); return claude.restore(); },
+          import: async () => { if (claudeMonitor.enabled || !await claude.importCurrent()) throw new Error('请先关闭 Claude 请求监控，并配置自定义网关与 Key。'); },
+          refresh: () => claude.refresh(input.id),
+        } : {
           'read-key': async () => ({ key: await manager.readKey(input.id) }),
           save: () => controller.save(input), delete: () => controller.remove(input.id),
           'undo-delete': () => manager.undoRemove(input.token), favorite: () => manager.setFavorite(input.id, input.favorite),
@@ -272,7 +348,7 @@ else {
           refresh: () => manager.refresh(input.id),
         };
         if (!Object.hasOwn(actions, route)) throw new Error('不存在的操作。');
-        const result = await manager.exclusive(async () => {
+        const result = await targetManager.exclusive(async () => {
           try {
             const value = await actions[route]();
             await storage.record('operation', { operation: route, outcome: route === 'refresh' ? value.status : 'ok', profileId: input.id });
@@ -292,6 +368,7 @@ else {
     tray = new Tray(path.join(__dirname, '..', 'assets', 'icon.ico'));
     tray.on('double-click', showWindow);
     renderTray(await controller.state());
+    await claude.state().then(s => renderTray(s, 'claude')).catch(() => {});
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (event, url) => { if (url !== trustedPage) event.preventDefault(); });
     window.webContents.on('will-attach-webview', event => event.preventDefault());
@@ -312,7 +389,7 @@ else {
         }).catch(() => {}).finally(() => { closePrompt = false; });
         return;
       }
-      if (!finishingQuit && (controller.monitor.enabled || controller.monitor.active.size || ['downloading', 'installing'].includes(updater?.status.phase))) { event.preventDefault(); app.quit(); }
+      if (!finishingQuit && (controller.monitor.enabled || controller.monitor.active.size || claudeMonitor.enabled || claudeMonitor.active.size || ['downloading', 'installing'].includes(updater?.status.phase))) { event.preventDefault(); app.quit(); }
     });
     window.on('closed', () => { window = null; });
     await window.loadFile(htmlPath);
@@ -338,7 +415,11 @@ app.on('before-quit', event => {
   if (window) window.setTitle('Codex API 管理 · 正在等待请求完成');
   manager.exclusive(async () => {
     const wasMonitoring = controller?.monitor.enabled;
-    transfer?.discard(); await controller?.monitor.shutdown();
+    const wasClaudeMonitoring = claudeMonitor?.enabled;
+    transfer?.discard(); claudeTransfer?.discard(); await controller?.monitor.shutdown();
+    if (claudeMonitor) await claudeMonitor.manager.exclusive(() => claudeMonitor.shutdown());
+    if (wasClaudeMonitoring && !updateRequested) await dialog.showMessageBox(window, { type: 'info', title: 'Claude 监控已关闭',
+      message: '请重新打开 Claude Code CLI，以恢复直连。', buttons: ['知道了'] });
     if (wasMonitoring && !updateRequested) {
       const choice = await dialog.showMessageBox(window, { type: 'info', title: '监控已自动关闭',
         message: '重启 Codex 使配置生效？',

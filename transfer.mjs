@@ -8,29 +8,34 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const identity = p => JSON.stringify([p.name, p.url]);
 const inside = (parent, child) => { const rel = path.relative(parent, child); return !rel || (!rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel)); };
 
-export function parseBundle(text) {
+export function parseBundle(text, { format = 'codex-api-manager', validate } = {}) {
   if (Buffer.byteLength(text) > MAX_BYTES) throw new Error('配置文件不能超过 8 MiB。');
   let raw;
   try { raw = JSON.parse(text.replace(/^\uFEFF/, '')); } catch { throw new Error('配置文件不是有效的 JSON。'); }
-  if (!raw || raw.format !== 'codex-api-manager' || raw.version !== 1 || !Array.isArray(raw.profiles) || !raw.profiles.length || raw.profiles.length > MAX_ITEMS) {
+  if (!raw || raw.format !== format || raw.version !== 1 || !Array.isArray(raw.profiles) || !raw.profiles.length || raw.profiles.length > MAX_ITEMS) {
     throw new Error('请选择本工具导出的配置文件（最多 500 个 API）。');
   }
   const seen = new Set();
   return raw.profiles.map((input, index) => {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error(`第 ${index + 1} 个 API 格式无效。`);
-    const { name, model, effort, adapter, url, key } = input;
-    if (typeof name !== 'string' || !name.trim() || name.trim().length > 80 || typeof model !== 'string' || !model.trim() || model.trim().length > 100) throw new Error(`第 ${index + 1} 个 API 的名称或模型无效。`);
-    if (typeof url !== 'string' || url.length > 2000) throw new Error(`第 ${index + 1} 个 API 地址无效。`);
-    let normalized;
-    try { normalized = normalizeUrl(url); } catch { throw new Error(`第 ${index + 1} 个 API 需要有效的 HTTPS 地址。`); }
-    if (!['minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort) || !['auto', 'newapi', 'sub2api', 'none'].includes(adapter)) throw new Error(`第 ${index + 1} 个 API 的选项无效。`);
-    if (typeof key !== 'string' || !key.trim() || key.length > 8192 || /[\r\n]/.test(key)) throw new Error(`第 ${index + 1} 个 API 缺少有效的 Key。`);
-    const profile = { name: name.trim(), url: normalized, model: model.trim(), effort, adapter, key: key.trim() };
+    const profile = validate ? validate(input) : parseCodexProfile(input, index);
+    if (!profile.key) throw new Error(`第 ${index + 1} 个 API 缺少有效的 Key。`);
     const id = identity(profile);
     if (seen.has(id)) throw new Error('文件中存在同名、同地址的重复 API。');
     seen.add(id);
     return profile;
   });
+}
+
+function parseCodexProfile(input, index) {
+  const { name, model, effort, adapter, url, key } = input;
+  if (typeof name !== 'string' || !name.trim() || name.trim().length > 80 || typeof model !== 'string' || !model.trim() || model.trim().length > 100) throw new Error(`第 ${index + 1} 个 API 的名称或模型无效。`);
+  if (typeof url !== 'string' || url.length > 2000) throw new Error(`第 ${index + 1} 个 API 地址无效。`);
+  let normalized;
+  try { normalized = normalizeUrl(url); } catch { throw new Error(`第 ${index + 1} 个 API 需要有效的 HTTPS 地址。`); }
+  if (!['minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort) || !['auto', 'newapi', 'sub2api', 'none'].includes(adapter)) throw new Error(`第 ${index + 1} 个 API 的选项无效。`);
+  if (typeof key !== 'string' || !key.trim() || key.length > 8192 || /[\r\n]/.test(key)) throw new Error(`第 ${index + 1} 个 API 缺少有效的 Key。`);
+  return { name: name.trim(), url: normalized, model: model.trim(), effort, adapter, key: key.trim() };
 }
 
 function selection(values, allowed) {
@@ -39,11 +44,13 @@ function selection(values, allowed) {
 }
 
 export class TransferService {
-  constructor(manager, monitor) { this.manager = manager; this.monitor = monitor; }
+  constructor(manager, monitor, { format = 'codex-api-manager', validate, serialize, protectedHomes = [] } = {}) {
+    Object.assign(this, { manager, monitor, format, validate, serialize, protectedHomes });
+  }
   discard() { clearTimeout(this.expiryTimer); this.pending = null; }
   preview(text, fileName = '') {
     this.discard();
-    const profiles = parseBundle(text);
+    const profiles = parseBundle(text, { format: this.format, validate: this.validate });
     const token = crypto.randomUUID();
     this.pending = { token, profiles };
     this.expiryTimer = setTimeout(() => this.discard(), 15 * 60 * 1000);
@@ -69,20 +76,20 @@ export class TransferService {
       const duplicateId = identity(p);
       if (seen.has(duplicateId)) throw new Error('所选 API 有同名、同地址的重复项，请修改名称或分开导出。');
       seen.add(duplicateId);
-      const row = { name: p.name, url: p.url, model: p.model, effort: p.effort, adapter: p.adapter };
+      const row = this.serialize ? this.serialize(p) : { name: p.name, url: p.url, model: p.model, effort: p.effort, adapter: p.adapter };
       if (!p.encryptedKey) throw new Error('所选 API 尚未填写 Key，请先补填。');
       row.key = await this.manager.codec.decrypt(p.encryptedKey);
       profiles.push(row);
     }
-    return { format: 'codex-api-manager', version: 1, profiles };
+    return { format: this.format, version: 1, profiles };
   }
   async exportTo(file, ids) {
     if (path.extname(file).toLowerCase() !== '.json') throw new Error('请保存为 .json 文件。');
     const parent = await fs.realpath(path.dirname(file));
     const target = path.join(parent, path.basename(file));
-    for (const folder of [this.manager.dataDir, this.manager.home]) {
+    for (const folder of [this.manager.dataDir, this.manager.home, ...this.protectedHomes]) {
       const actual = await fs.realpath(folder).catch(e => { if (e.code === 'ENOENT') return path.resolve(folder); throw e; });
-      if (inside(actual, target)) throw new Error('请导出到数据目录和 Codex 配置目录之外，避免覆盖运行文件。');
+      if (inside(actual, target)) throw new Error('请导出到数据目录和 CLI 配置目录之外，避免覆盖运行文件。');
     }
     const bundle = await this.exportBundle(ids);
     const text = JSON.stringify(bundle, null, 2) + '\n';

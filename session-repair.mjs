@@ -121,6 +121,11 @@ export class SessionRepair {
       return db;
     } catch (e) { db.close(); throw e; }
   }
+  async providerIds() {
+    const info = await this.database(), db = await this.open(info);
+    try { return db.prepare('SELECT DISTINCT model_provider FROM threads WHERE model_provider IS NOT NULL').all().map(r => r.model_provider).filter(id => typeof id === 'string' && /^[\w.-]{1,100}$/.test(id) && !['openai', 'ollama', 'lmstudio'].includes(id.toLowerCase())).slice(0, 500); }
+    finally { db.close(); }
+  }
   isLocal(value) { return value?.origin === this.manager.origin && value.home === path.resolve(this.manager.home); }
   async saved({ allowForeign = false } = {}) {
     try {
@@ -133,17 +138,27 @@ export class SessionRepair {
     await fs.mkdir(path.dirname(this.journal), { recursive: true });
     await atomic(this.journal, await this.manager.codec.encrypt(JSON.stringify(journal)));
   }
-  async scan({ excludeIds = [], skipProviders = [], offset = 0, targetProvider } = {}) {
+  async scan({ excludeIds = [], skipProviders = [], offset = 0, targetProvider, includeAligned = false } = {}) {
     const current = await this.config();
     if (targetProvider !== undefined && (typeof targetProvider !== 'string' || !/^[\w.-]{1,100}$/.test(targetProvider))) fail('目标 provider 无效。');
     const config = { ...current, target: targetProvider ?? current.target };
     const info = await this.database(); const db = await this.open(info);
-    const candidates = new Map(), entries = [];
+    const candidates = new Map(), entries = [], names = new Map();
+    // The desktop sidebar can rename threads independently of the SQLite title.
+    // This optional index is display-only and must never control which file is changed.
     try {
-      const rows = db.prepare(`SELECT id, rollout_path, model_provider, title, updated_at, history_mode FROM threads WHERE model_provider<>? ${excludeIds.length ? `AND id NOT IN (${excludeIds.map(() => '?').join(',')})` : ''} ${skipProviders.length ? `AND model_provider NOT IN (${skipProviders.map(() => '?').join(',')})` : ''} ORDER BY updated_at DESC,id LIMIT 3001 OFFSET ?`).all(config.target, ...excludeIds, ...skipProviders, offset);
+      const file = path.join(info.home, 'session_index.jsonl');
+      if ((await fs.stat(file)).size <= 5 * 1024 * 1024) {
+        for (const line of (await fs.readFile(file, 'utf8')).split('\n')) {
+          try { const item = JSON.parse(line); if (idPattern.test(item.id) && typeof item.thread_name === 'string' && item.thread_name.trim()) names.set(item.id, item.thread_name.trim().slice(0, 180)); } catch {}
+        }
+      }
+    } catch {}
+    try {
+      const rows = db.prepare(`SELECT id, rollout_path, model_provider, title, updated_at, history_mode FROM threads WHERE ${includeAligned ? '1=1' : 'model_provider<>?'} ${excludeIds.length ? `AND id NOT IN (${excludeIds.map(() => '?').join(',')})` : ''} ${skipProviders.length ? `AND model_provider NOT IN (${skipProviders.map(() => '?').join(',')})` : ''} ORDER BY updated_at DESC,id LIMIT 3001 OFFSET ?`).all(...(includeAligned ? [] : [config.target]), ...excludeIds, ...skipProviders, offset);
       for (const row of rows.slice(0, 3000)) {
-        if (row.model_provider === config.target) continue;
-        const entry = { id: row.id, title: String(row.title || '未命名对话').slice(0, 180), provider: String(row.model_provider || '').slice(0, 100), updatedAt: row.updated_at, eligible: false };
+        const entry = { id: row.id, title: names.get(row.id) || String(row.title || '未命名对话').slice(0, 180), provider: String(row.model_provider || '').slice(0, 100), updatedAt: row.updated_at, eligible: false };
+        if (row.model_provider === config.target) { entry.reason = '已是目标入口'; entry.aligned = true; entries.push(entry); continue; }
         try {
           if (!idPattern.test(row.id)) fail('此会话标识格式暂不支持。');
           const file = await this.sessionFile(row.rollout_path, info.home); const stat = await fs.stat(file);

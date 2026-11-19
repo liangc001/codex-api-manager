@@ -3,13 +3,38 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { Manager, updateConfig, parseConfig, restoreMonitorConfig, normalizeUrl, normalizeUsage, queryUsage, windowsCodec } from '../core.mjs';
+import { Manager, updateConfig, updateGlobalProvider, parseConfig, restoreMonitorConfig, normalizeUrl, normalizeUsage, queryUsage, windowsCodec } from '../core.mjs';
 
 const original = '# user comment\nmodel_provider = "custom" # provider comment\nmodel = "old"\nmodel_reasoning_effort = "high"\n\n[model_providers.custom]\nbase_url = "https://original.example/v1"\n\n[projects."C:\\\\work"]\ntrust_level = "trusted"\n\n[desktop]\nlocaleOverride = "zh-CN"\n';
 const profile = { name: 'Test', url: 'https://target.example/v1', model: 'new', effort: 'xhigh' };
 
 const legacyConfig = original.replace('base_url = "https://original.example/v1"',
   'base_url = "https://original.example/v1" # legacy URL\nwire_api = "responses"\nrequires_openai_auth = true\nrequest_max_retries = 7');
+
+test('manual global provider uses the active endpoint, preserves credentials and can be restored', async t => {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'manager-global-provider-')); t.after(() => fs.rm(temp, { recursive: true, force: true }));
+  const codexHome = path.join(temp, 'codex'); await fs.mkdir(codexHome);
+  const config = updateConfig(legacyConfig, profile).replace('base_url = "https://target.example/v1" # legacy URL', 'base_url = "https://stale.example/v1" # legacy URL');
+  const auth = '{"OPENAI_API_KEY":"fixture-key","other":"preserve"}';
+  await fs.writeFile(path.join(codexHome, 'config.toml'), config); await fs.writeFile(path.join(codexHome, 'auth.json'), auth);
+  const codec = { encrypt: async x => Buffer.from(x).toString('base64'), decrypt: async x => Buffer.from(x, 'base64').toString() };
+  const manager = new Manager({ codexHome, dataDir: path.join(temp, 'data'), codec }); await manager.init();
+  const options = await manager.globalProviderOptions(); assert.ok(options.options.includes('custom')); assert.equal(options.current, 'codex_api_manager');
+  await manager.setGlobalProvider('custom', options.revision);
+  const changed = parseConfig(await fs.readFile(manager.configPath, 'utf8'));
+  assert.equal(changed.model_provider, 'custom'); assert.equal(changed.model_providers.custom.base_url, profile.url); assert.equal(changed.model_providers.custom.request_max_retries, 7);
+  assert.equal(await fs.readFile(manager.authPath, 'utf8'), auth);
+  await assert.rejects(manager.setGlobalProvider('codex_api_manager', options.revision), /已改变/);
+  await manager.restore(); assert.equal(await fs.readFile(manager.configPath, 'utf8'), config); assert.equal(await fs.readFile(manager.authPath, 'utf8'), auth);
+});
+test('manual global provider rejects built-in and independently authenticated targets', () => {
+  const input = updateConfig(legacyConfig, profile) + '\n[model_providers.independent]\nbase_url="https://other.example/v1"\nwire_api="responses"\nrequires_openai_auth=true\nenv_key="PRIVATE_KEY"\n';
+  assert.throws(() => updateGlobalProvider(input, 'openai'), /自定义/);
+  assert.throws(() => updateGlobalProvider(input, 'independent'), /无法安全切换/);
+  const created = parseConfig(updateGlobalProvider(input, 'not-configured'));
+  assert.equal(created.model_provider, 'not-configured'); assert.equal(created.model_providers['not-configured'].base_url, profile.url); assert.equal(created.model_providers['not-configured'].requires_openai_auth, true);
+  assert.throws(() => updateGlobalProvider(input.replaceAll('https://target.example/v1', 'http://127.0.0.1:1234/v1'), 'custom'));
+});
 
 test('old conversation providers follow shared auth, preserving independent providers', () => {
   const input = legacyConfig + '\n[model_providers.other]\nbase_url = "https://other.example/v1"\nwire_api = "responses"\nrequires_openai_auth = true\nenv_key = "OTHER_API_KEY"\n'

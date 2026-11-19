@@ -82,6 +82,19 @@ test('automatic scan finds extended custom chats before sync, then safely migrat
 });
 async function apply(f) { const preview = await f.service.scan(); return f.service.apply({ token: preview.token, ids: [f.id] }); }
 
+test('manual list shows sidebar names and already aligned records without making them repair candidates', async t => {
+  const f = await setup(t);
+  const alignedId = '22222222-2222-4222-8222-222222222222';
+  const db = new DatabaseSync(path.join(f.manager.home, 'state_5.sqlite'));
+  db.prepare('INSERT INTO threads VALUES (?,?,?,?,?,?)').run(alignedId, path.join(f.manager.home, 'sessions', 'missing.jsonl'), f.target, 'database title', 99, 'legacy'); db.close();
+  await fs.writeFile(path.join(f.manager.home, 'session_index.jsonl'), [JSON.stringify({ id: f.id, thread_name: '旧侧边栏标题' }), '{bad', JSON.stringify({ id: f.id, thread_name: '新的侧边栏标题' }), JSON.stringify({ id: alignedId, thread_name: '已统一的侧边栏标题' })].join('\n'));
+  const preview = await f.service.scan({ targetProvider: f.target, includeAligned: true });
+  assert.equal(preview.entries.length, 2);
+  assert.equal(preview.entries.find(e => e.id === f.id).title, '新的侧边栏标题');
+  assert.deepEqual({ title: preview.entries.find(e => e.id === alignedId).title, aligned: preview.entries.find(e => e.id === alignedId).aligned, eligible: preview.entries.find(e => e.id === alignedId).eligible }, { title: '已统一的侧边栏标题', aligned: true, eligible: false });
+  await assert.rejects(f.service.apply({ token: preview.token, ids: [alignedId] }), /请选择有效会话/);
+});
+
 test('provider migration preserves all history bytes and adjusts paginated byte offsets; exact undo', async t => {
   const f = await setup(t); const beforeOffsets = offsets(f);
   await apply(f); const bytes = await fs.readFile(f.file); const first = bytes.indexOf(10) + 1;

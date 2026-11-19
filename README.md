@@ -49,6 +49,14 @@
 - **旧对话提示 provider 不匹配**：在主界面「旧对话兼容 → 管理」开启[自动兼容旧对话](docs/session-repair.md)，后台等待 Codex 完全退出后处理；也支持手动选择、排除独立连接、加密备份和撤回。
 - **需要换电脑或分享配置**：软件与数据整夹迁移；也可选择部分 API 导出，Key 一起携带。
 
+## Claude Code CLI
+
+在主界面顶部切到 **Claude Code**，添加支持 Anthropic Messages 协议的 API。可使用和 Codex 相同的列表、详情、收藏、批量用量、连接测试、请求监控及配置导入导出。填写 HTTPS 网关地址和 Key，按服务商要求选 **Bearer** 或 **x-api-key**。点击「查询模型」读取上游 `/v1/models`，也可手动填入模型 ID，或留空继续用 CLI 默认模型。用量数据取决于服务商是否提供兼容的查询接口。
+
+点「切换」后重新打开 Claude Code CLI。工具只更新 Claude 的用户 `settings.json`（默认在 `~/.claude`，也支持 `CLAUDE_CONFIG_DIR`），与 Codex 配置分开。若终端、项目或组织策略设置了自己的网关或认证，以 Claude Code 实际加载的配置为准。可用面板里的撤销按钮恢复上一次切换，也可以按需导入或导出 Claude API。
+
+便携档案与切换备份加密保存在工具的 `data` 目录。Claude Code 为读取网关凭据会在自己的用户设置中保存 Key；导出的配置也包含 Key。此入口仅适用于 CLI，不配置 Claude Desktop。
+
 ## 日常操作，集中完成
 
 | 连接管理 | 用量与排查 | 使用体验 |

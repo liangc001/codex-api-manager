@@ -10,7 +10,7 @@ async function read(file) {
   try { return await fs.readFile(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
 }
 function headers(source, extra = {}) {
-  const denied = new Set(['host', 'authorization', 'cookie', 'set-cookie', 'origin', 'referer', 'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'accept-encoding']);
+  const denied = new Set(['host', 'authorization', 'x-api-key', 'cookie', 'set-cookie', 'origin', 'referer', 'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'accept-encoding']);
   for (const name of String(source.connection || '').split(',')) denied.add(name.trim().toLowerCase());
   return { ...Object.fromEntries(Object.entries(source).filter(([name]) => !denied.has(name.toLowerCase()))), ...extra };
 }
@@ -168,12 +168,15 @@ export class RequestMonitor {
   async handle(req, res) {
     const fail = (status, text) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: text } })); };
     if (req.headers.origin || req.headers.authorization !== `Bearer ${this.token}`) return fail(401, 'Local monitor authentication required');
-    if (!this.enabled || !this.profile) return fail(503, 'Monitoring disabled; restart Codex to use direct configuration');
+    if (!this.enabled || !this.profile) return fail(503, 'Monitoring disabled; reopen the client to use direct configuration');
     const requestUrl = new URL(req.url, 'http://localhost');
     const route = requestUrl.pathname;
-    const allowed = route === '/v1/models' && req.method === 'GET' ||
+    const claude = !!this.profile.auth;
+    const allowed = route === '/v1/models' && req.method === 'GET' || (claude
+      ? ['/v1/messages', '/v1/messages/count_tokens'].includes(route) && req.method === 'POST'
+      :
       ['/v1/responses', '/v1/responses/compact', '/v1/chat/completions'].includes(route) && req.method === 'POST' ||
-      /^\/v1\/responses\/[a-zA-Z0-9_-]+$/.test(route) && ['GET', 'DELETE'].includes(req.method);
+      /^\/v1\/responses\/[a-zA-Z0-9_-]+$/.test(route) && ['GET', 'DELETE'].includes(req.method));
     if (!allowed) return fail(404, 'Unsupported API route');
     // Pin each accepted request to its provider so switching cannot redirect an existing stream.
     const profile = this.profile;
@@ -212,9 +215,10 @@ export class RequestMonitor {
       if (body.length && !req.headers['content-encoding']) {
         try { const model = JSON.parse(body.toString()).model; if (typeof model === 'string') record.model = model.slice(0, 100); } catch {}
       }
-      const url = new URL(profile.url.replace(/\/$/, '') + route.slice(3));
+      const url = new URL(profile.url.replace(/\/$/, '') + (claude ? route : route.slice(3)));
       url.search = requestUrl.search;
-      const outgoing = headers(req.headers, { authorization: `Bearer ${profile.key}`, 'accept-encoding': 'identity', 'content-length': body.length });
+      const credential = profile.auth === 'api-key' ? { 'x-api-key': profile.key } : { authorization: `Bearer ${profile.key}` };
+      const outgoing = headers(req.headers, { ...credential, 'accept-encoding': 'identity', 'content-length': body.length });
       upstream = this.requester(url, { method: req.method, headers: outgoing }, response => {
         if (done) { response.destroy(); return; }
         record.firstByte = Date.now() - record.startedAt;

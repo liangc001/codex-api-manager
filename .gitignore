@@ -20,3 +20,8 @@ codex-api-profiles*.json
 codex-api-diagnostics*.json
 
 dist-session-preview/
+dist-*/
+claude-profiles.json
+claude-api-profiles*.json
+claude-api-diagnostics*.json
+claude-monitor-session.enc

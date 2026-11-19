@@ -37,7 +37,7 @@ try {
   await page.locator('#open-overview-records').click();
   await page.waitForSelector('#auto-repair-records-dialog[open]');
   await page.locator('#close-auto-repair-records').click();
-  await page.locator('#open-compatibility-panel').click();
+  await page.locator('#open-compatibility').click();
   await page.locator('#open-session-repair').click();
   await page.waitForFunction(() => document.querySelectorAll('.repair-session').length === 2);
   assert.equal(await page.locator('#session-repair-target').textContent(), 'codex_api_manager');
@@ -158,6 +158,8 @@ try {
   }
   await page.locator('#close-auto-repair-records').click();
   await page.locator('#open-session-repair').click();
+  await page.waitForFunction(() => document.querySelector('#session-repair-list').textContent.includes('已是目标入口'));
+  assert.equal(await page.locator('.repair-session').filter({ hasText: '已是目标入口' }).locator('input').isDisabled(), true);
   await page.waitForFunction(() => !document.querySelector('#undo-session-repair').disabled);
   await page.locator('#undo-session-repair').click();
   await page.waitForFunction(() => document.querySelector('#session-repair-notice').textContent.includes('已撤回 1'));
@@ -169,6 +171,33 @@ try {
   assert.equal(await page.evaluate(async () => (await api('auto-session-repair-status')).enabled), false);
   const report = await page.evaluate(() => api('auto-session-repair-details'));
   assert.ok(report.records.length >= 1); assert.ok(report.records[0].undoneAt);
+  await page.locator('#open-global-provider').click();
+  await page.waitForFunction(() => [...document.querySelector('#global-provider-select').options].some(o => o.value === 'custom'));
+  assert.equal(await page.locator('#compatibility-dialog').evaluate(d => d.open), false);
+  assert.equal(await page.locator('#global-provider-current').textContent(), 'codex_api_manager');
+  for (const theme of ['light', 'dark', 'rainbow']) {
+    await page.evaluate(theme => window.managerTheme.apply(theme), theme);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 950 });
+      await page.locator('#global-provider-select').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `test-output/global-provider-${theme}-${width}.png` });
+      assert.ok(await page.locator('#global-provider-dialog').evaluate(d => d.scrollWidth <= d.clientWidth));
+    }
+  }
+  await page.locator('#global-provider-select').selectOption('custom');
+  await page.locator('#apply-global-provider').click();
+  await page.waitForFunction(() => document.querySelector('#global-provider-status').textContent.includes('已切换为 custom'));
+  assert.equal(await page.locator('#global-provider-current').textContent(), 'custom');
+  const changed = await app.evaluate(({ app }) => process.mainModule.require('node:fs').readFileSync(process.mainModule.require('node:path').join(process.env.CODEX_HOME, 'config.toml'), 'utf8'));
+  assert.match(changed, /model_provider\s*=\s*"custom"/);
+  await page.locator('#global-provider-select').selectOption('codex_api_manager');
+  await page.locator('#apply-global-provider').click();
+  await page.waitForFunction(() => document.querySelector('#global-provider-status').textContent.includes('已切换为 codex_api_manager'));
+  await page.locator('#global-provider-select').selectOption('previous');
+  await page.locator('#apply-global-provider').click();
+  await page.waitForFunction(() => document.querySelector('#global-provider-status').textContent.includes('已切换为 previous'));
+  const created = await app.evaluate(({ app }) => process.mainModule.require('node:fs').readFileSync(process.mainModule.require('node:path').join(process.env.CODEX_HOME, 'config.toml'), 'utf8'));
+  assert.match(created, /model_provider\s*=\s*"previous"/); assert.match(created, /\[model_providers\."previous"\]/);
   assert.deepEqual(errors, []);
   console.log('Session repair desktop UI passed: manual repair, automatic migration, running guard, exclusions, undo disables auto, persisted settings, themes and responsive dialogs.');
 } finally { await app.close(); await fs.rm(temp, { recursive: true, force: true }); }

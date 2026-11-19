@@ -49,7 +49,9 @@
     get('check-auto-session-repair').disabled = !value.enabled || configuring || ['scanning', 'repairing'].includes(value.phase);
     get('auto-repair-overview').hidden = !window.codexManager;
     get('auto-repair-overview').dataset.phase = value.phase;
-    get('auto-repair-overview-text').textContent = value.phase === 'off' ? '开启后，退出 Codex 即可自动处理旧对话' : value.message;
+    const overviewText = get('auto-repair-overview-text');
+    overviewText.hidden = ['off', 'idle'].includes(value.phase);
+    overviewText.textContent = overviewText.hidden ? '' : value.message;
     get('compatibility-overview-phase').textContent = phases[value.phase] || '等待检查';
     get('auto-repair-overview').title = value.message;
     if (value.phase === 'complete' && previous?.phase !== 'complete') notice(value.message + '，可查看处理记录。');
@@ -72,8 +74,31 @@
     catch (e) { get('auto-session-repair-status').textContent = e.message; }
     finally { await syncAuto(); }
   };
+  let providerRevision = '';
+  async function refreshGlobalProviders() {
+    const select = get('global-provider-select');
+    try {
+      const value = await api('global-provider-options'); providerRevision = value.revision;
+      get('global-provider-current').textContent = value.current || '未配置';
+      select.replaceChildren();
+      for (const id of value.options) { const option = node('option', '', id + (id === value.current ? '（当前）' : '')); option.value = id; select.append(option); }
+      select.value = value.current; get('apply-global-provider').disabled = !select.value;
+      get('global-provider-status').textContent = value.options.length ? '' : '请先切换到已配置的 API。';
+    } catch (e) { providerRevision = ''; get('apply-global-provider').disabled = true; get('global-provider-status').textContent = e.message; }
+  }
+  get('apply-global-provider').onclick = async () => {
+    const button = get('apply-global-provider'), id = get('global-provider-select').value;
+    button.disabled = true; get('global-provider-status').textContent = '正在应用…';
+    try {
+      await api('set-global-provider', { id, revision: providerRevision });
+      markConnectionChange(); await load(); await syncAuto(); await refreshGlobalProviders();
+      get('global-provider-status').textContent = `已切换为 ${id}；如果旧对话仍报错，请重启 Codex。`;
+    } catch (e) { get('global-provider-status').textContent = e.message; button.disabled = false; }
+  };
+  get('open-global-provider').onclick = async () => { get('global-provider-dialog').showModal(); await refreshGlobalProviders(); };
+  get('close-global-provider').onclick = () => get('global-provider-dialog').close();
   async function openCompatibility() { if (!get('compatibility-dialog').open) get('compatibility-dialog').showModal(); await syncAuto(); }
-  get('open-compatibility').onclick = get('open-compatibility-panel').onclick = openCompatibility;
+  get('open-compatibility').onclick = openCompatibility;
   get('close-compatibility').onclick = () => get('compatibility-dialog').close();
   async function renderRecords() {
     if (recordsBusy) return; recordsBusy = true;
@@ -140,7 +165,7 @@
         const row = document.createElement('div'); row.className = 'repair-session' + (item.eligible ? '' : ' unavailable');
         const input = document.createElement('input'); input.type = 'checkbox'; input.id = 'repair-select-' + item.id; input.value = item.id; input.disabled = !item.eligible || scan.pending; input.onchange = controls;
         const content = document.createElement('label'); content.className = 'repair-session-content'; content.htmlFor = input.id; const title = document.createElement('strong'); title.textContent = item.title;
-        const meta = document.createElement('small'); meta.textContent = item.provider + (item.reason ? ' · ' + item.reason : ' → ' + scan.target);
+        const meta = document.createElement('small'); meta.textContent = item.provider + (item.aligned ? ' · 已是目标入口（以索引为准）' : item.reason ? ' · 已跳过：' + item.reason : ' → ' + scan.target);
         content.append(title, meta); row.append(input, content);
         if (item.eligible) {
           const exclude = document.createElement('button'); exclude.type = 'button'; exclude.className = 'repair-exclude';
@@ -157,7 +182,7 @@
         }
         get('session-repair-list').append(row);
       }
-      if (!scan.entries.length) { const empty = document.createElement('p'); empty.textContent = '没有需要迁移到 codex_api_manager 的对话。'; get('session-repair-list').append(empty); }
+      if (!scan.entries.length) { const empty = document.createElement('p'); empty.textContent = '没有找到本机会话记录。'; get('session-repair-list').append(empty); }
       status(scan.pending ? '上次修复未完成，请先点击「撤回上次修复」恢复。' : scan.requiresProviderSync ? '已扫描；请先在 API 列表点击「同步入口」或「切换」，再重新扫描修复。' : message || (scan.truncated ? '仅显示最近 3000 条记录，每次最多修复 100 个对话。' : '请选择要修复的对话，每次最多 100 个。'));
     } catch (e) { status(message ? message + ' ' + e.message : e.message, true); }
     finally { working = false; controls(); lucide.createIcons(); }

@@ -23,10 +23,13 @@
         <button id="help" class="icon" title="新手引导" aria-label="新手引导" aria-expanded="false" aria-controls="quick-guide"><i data-lucide="circle-help"></i></button>
         <button id="restart-codex" class="icon" title="重启 Codex App" aria-label="重启 Codex App" hidden><i data-lucide="rotate-cw"></i></button>
         <button id="settings" class="icon" title="设置" aria-label="设置"><i data-lucide="settings"></i></button>
-        <button id="refresh-all" class="icon" title="刷新用量" aria-label="刷新用量"><i data-lucide="refresh-cw"></i></button>
         <button id="add" class="primary"><i data-lucide="plus"></i><span>添加 API</span></button>
       </div>
     </header>
+    <nav id="client-switcher" class="client-switcher" aria-label="API 客户端" hidden>
+      <button id="client-codex" type="button" aria-pressed="true"><i data-lucide="square-terminal"></i>Codex</button>
+      <button id="client-claude" type="button" aria-pressed="false"><i data-lucide="terminal"></i>Claude Code</button>
+    </nav>
     <section id="quick-guide" class="quick-guide" aria-label="新手引导" hidden>
       <div class="guide-heading"><span class="guide-label">快速开始</span><span id="guide-progress"></span><button id="close-guide" class="icon" title="退出教程" aria-label="退出教程"><i data-lucide="x"></i></button></div>
       <ol class="guide-steps" aria-label="教程进度"><li aria-label="添加"><span></span></li><li aria-label="切换"><span></span></li><li aria-label="重启"><span></span></li></ol>
@@ -36,12 +39,12 @@
       <div class="guide-actions"><button id="guide-add" class="primary"><i data-lucide="plus"></i>添加 API</button><button id="guide-cli-done" hidden>已重新打开</button><button id="guide-done" class="plain">退出教程</button></div>
     </section>
     <section class="current" aria-label="当前配置">
-      <div><span class="eyebrow">当前 API</span><span id="connection-status" class="connection-status" role="status"></span><div id="current-name" class="current-name">读取中...</div><div id="current-url" class="mono"></div></div>
-      <div id="current-model" class="mono"></div>
+      <div class="current-identity"><div class="current-heading"><span class="eyebrow">当前 API</span><span id="connection-status" class="connection-status" role="status"></span></div><div id="current-name" class="current-name">读取中…</div><div id="current-url" class="mono"></div></div>
+      <div id="current-model-summary" class="current-model-summary" hidden><span>模型</span><code id="current-model" class="mono"></code></div>
     </section>
     <section id="auto-repair-overview" class="auto-repair-overview" aria-label="旧对话兼容" hidden>
-      <button id="open-compatibility" class="compatibility-entry" type="button" aria-haspopup="dialog" aria-controls="compatibility-dialog"><span class="auto-repair-dot" aria-hidden="true"></span><span class="compatibility-entry-copy"><strong>旧对话兼容</strong><span id="auto-repair-overview-text">后台兼容旧对话，切换 API 更省心</span></span></button>
-      <div class="compatibility-entry-actions"><span id="compatibility-overview-phase" class="auto-repair-phase">未开启</span><button id="open-overview-records" type="button"><i data-lucide="history"></i>处理记录</button><button id="open-compatibility-panel" type="button" aria-haspopup="dialog" aria-controls="compatibility-dialog">管理<i data-lucide="chevron-right"></i></button></div>
+      <div class="compatibility-entry"><span class="auto-repair-dot" aria-hidden="true"></span><div class="compatibility-entry-copy"><div class="compatibility-heading"><h2>旧对话兼容</h2><span id="compatibility-overview-phase" class="auto-repair-phase">未开启</span></div><span id="auto-repair-overview-text" hidden></span></div></div>
+      <div class="compatibility-entry-actions"><button id="open-global-provider" type="button" aria-haspopup="dialog" aria-controls="global-provider-dialog"><i data-lucide="arrow-right-left"></i><span>切换全局入口</span><code id="global-provider-overview"></code></button><button id="open-overview-records" type="button"><i data-lucide="history"></i>处理记录</button><button id="open-compatibility" type="button" aria-haspopup="dialog" aria-controls="compatibility-dialog">管理<i data-lucide="chevron-right"></i></button></div>
     </section>
     <section class="monitor-section" aria-label="实时请求监控">
       <div class="monitor-heading"><h2><i data-lucide="activity"></i>请求监控</h2><span class="monitor-scope" title="只统计经过本工具代理的请求，不包含其他电脑">仅本机</span><label class="monitor-toggle monitor-switch" title="监控本机请求；开关后需重启 Codex，开启期间保持本工具运行。"><input type="checkbox" id="monitor-toggle" role="switch" aria-label="请求监控"><span id="monitor-toggle-label">未开启</span></label></div>
@@ -56,7 +59,7 @@
     <div id="conflicts" class="notice warning" hidden></div>
     <section class="list-section" aria-label="API 列表">
       <div class="list-heading"><h2>API <span id="count"></span></h2><div class="secondary-actions"><button id="import-file" class="icon" title="导入配置文件" aria-label="导入配置文件"><i data-lucide="folder-input"></i></button><button id="export-file" class="icon" title="导出 API" aria-label="导出 API"><i data-lucide="folder-output"></i></button><button id="import" class="icon" title="导入当前 Codex 配置" aria-label="导入当前 Codex 配置"><i data-lucide="download"></i></button><button id="restore" class="icon" title="撤销切换" aria-label="撤销切换"><i data-lucide="undo-2"></i></button></div></div>
-      <div class="api-filters"><input id="api-search" type="search" placeholder="搜索名称、地址或模型" aria-label="搜索 API"><button id="favorites-only" type="button" aria-pressed="false"><i data-lucide="star"></i>收藏</button></div>
+      <div class="api-filters"><div class="api-search-field"><i data-lucide="search" aria-hidden="true"></i><input id="api-search" type="search" placeholder="搜索名称、地址或模型" aria-label="搜索 API"></div><div class="api-filter-actions"><button id="favorites-only" type="button" aria-pressed="false"><i data-lucide="star"></i>收藏</button><button id="refresh-all" type="button"><i data-lucide="refresh-cw"></i>刷新用量</button></div></div>
       <div id="delete-undo" class="delete-undo" role="status" hidden><span id="delete-undo-text"></span><button id="undo-delete" type="button" class="plain">撤销删除</button></div>
       <div id="profiles" class="profiles"></div>
     </section>
@@ -73,11 +76,12 @@
       <label>名称<input name="name" required maxlength="80" autocomplete="off"></label>
       <label>API 地址<input name="url" type="url" required placeholder="https://example.com/v1" autocomplete="off"></label>
       <label>API Key<div class="key-input"><input name="key" type="password" placeholder="填写 Key" autocomplete="new-password"><button type="button" id="toggle-key" class="icon" title="显示或隐藏密钥"><i data-lucide="eye"></i></button></div></label>
+      <label id="profile-auth" hidden>认证方式<select name="auth"><option value="bearer">Bearer</option><option value="api-key">x-api-key</option></select></label>
       <label>模型<div class="model-control"><input name="model" required value="gpt-6-sol" autocomplete="off"><button type="button" id="query-models">查询模型</button></div></label>
       <div id="model-picker" class="model-picker" hidden><label>选择模型<select id="model-list"><option value="">选择模型</option></select></label></div>
       <p id="model-notice" class="model-notice" role="status" hidden></p>
       <details id="profile-options" class="options"><summary>更多设置</summary><div class="options-body">
-        <label>推理档位<select name="effort"><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh" selected>XHigh</option></select></label>
+        <label id="profile-effort">推理档位<select name="effort"><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh" selected>XHigh</option></select></label>
         <label>用量查询<select name="adapter"><option value="auto">自动</option><option value="newapi">New API</option><option value="sub2api">Sub2API</option><option value="none">关闭</option></select></label>
       </div></details>
       <div class="dialog-actions"><button type="button" id="cancel-editor">取消</button><button type="submit" class="primary"><i data-lucide="check"></i>保存</button></div>
@@ -132,7 +136,7 @@
       <details id="storage-details" class="options"><summary>文件位置</summary><div class="options-body">
       <div class="storage-path"><span>日志</span><div><code id="log-path"></code></div></div>
       <div class="storage-path"><span>设置文件</span><div><code id="settings-path"></code><button type="button" data-open-dir="settings" class="icon" title="打开设置目录"><i data-lucide="folder-open"></i></button></div></div>
-      <div class="storage-path"><span>Codex 配置目录</span><div><code id="codex-path"></code><button type="button" data-open-dir="config" class="icon" title="打开 Codex 配置目录"><i data-lucide="folder-open"></i></button></div></div>
+      <div class="storage-path"><span id="client-config-label">Codex 配置目录</span><div><code id="codex-path"></code><button type="button" data-open-dir="config" class="icon" title="打开 Codex 配置目录"><i data-lucide="folder-open"></i></button></div></div>
       <div class="storage-path"><span>缓存</span><div><code id="cache-path"></code><button type="button" data-open-dir="cache" class="icon" title="打开缓存目录"><i data-lucide="folder-open"></i></button></div></div>
       </div></details>
 
@@ -158,6 +162,7 @@
         <div class="auto-repair-actions"><button id="check-auto-session-repair" type="button"><i data-lucide="refresh-cw"></i><span>检查状态</span></button><button id="open-session-repair" type="button"><i data-lucide="messages-square"></i>手动修复</button><button id="open-auto-repair-records" type="button">查看处理记录<i data-lucide="arrow-up-right"></i></button></div>
       </div>
   </div></dialog>
+  <dialog id="global-provider-dialog" aria-labelledby="global-provider-label"><div class="dialog-heading"><div><div class="repair-dialog-eyebrow"><i data-lucide="arrow-right-left"></i><span>连接管理</span></div><h2 id="global-provider-label">切换全局入口</h2></div><button id="close-global-provider" type="button" class="icon" aria-label="关闭"><i data-lucide="x"></i></button></div><div class="global-provider-control"><p>当前入口 <code id="global-provider-current">—</code></p><label for="global-provider-select">选择旧对话的 provider</label><div class="global-provider-actions"><select id="global-provider-select" aria-label="全局 provider"><option value="">正在读取…</option></select><button type="button" id="apply-global-provider" class="primary">应用</button></div><p class="global-provider-note">使用当前 API 的地址和 Key，影响所有对话。切换 API 后恢复默认入口。</p><p id="global-provider-status" role="status" aria-live="polite"></p></div></dialog>
   <dialog id="session-repair-dialog" aria-labelledby="session-repair-title">
     <div class="dialog-heading"><div><h2 id="session-repair-title">修复旧对话连接</h2><p>将选中对话迁移到当前 provider，保留聊天内容；可排除需要独立连接的对话。</p></div><button id="close-session-repair" type="button" class="icon" aria-label="关闭会话修复"><i data-lucide="x"></i></button></div>
     <div class="session-repair-body">

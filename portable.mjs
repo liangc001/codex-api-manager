@@ -11,13 +11,13 @@ export async function portableCodec(dataDir) {
   catch (e) {
     if (e.code !== 'ENOENT') throw e;
     const entries = await fs.readdir(dataDir).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
-    if (entries.includes('monitor-session.json') || (entries.includes('backups') && (await fs.readdir(path.join(dataDir, 'backups'))).length)) {
+    if (entries.includes('monitor-session.json') || entries.includes('claude-monitor-session.enc') || (entries.includes('backups') && (await fs.readdir(path.join(dataDir, 'backups'))).length)) {
       throw new Error('缺少 secrets.key，请恢复原来的密钥文件以读取加密备份。');
     }
-    if (entries.includes('profiles.json')) {
-      const store = JSON.parse(await fs.readFile(path.join(dataDir, 'profiles.json'), 'utf8'));
+    for (const file of ['profiles.json', 'claude-profiles.json'].filter(name => entries.includes(name))) {
+      const store = JSON.parse(await fs.readFile(path.join(dataDir, file), 'utf8'));
       if (store.profiles?.some(p => p.encryptedKey) || store.lastBackup || entries.includes('monitor-session.json') || entries.includes('backups')) {
-        throw new Error('缺少 secrets.key，请连同原来的 data 文件夹完整复制，不能仅复制 profiles.json。');
+        throw new Error('缺少 secrets.key，请连同原来的 data 文件夹完整复制，不能仅复制配置文件。');
       }
     }
     key = crypto.randomBytes(32);
