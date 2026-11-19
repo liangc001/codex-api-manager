@@ -1,10 +1,10 @@
 {
   "name": "codex-api-manager",
-  "version": "1.0.50",
+  "version": "1.0.51",
   "private": true,
   "type": "module",
-  "description": "Local Windows desktop manager for Codex API profiles",
-  "author": "Codex API Manager",
+  "description": "Local Windows API switchboard for Codex and Claude Code",
+  "author": "API Switchboard",
   "main": "desktop/main.cjs",
   "scripts": {
     "start": "node server.mjs",
@@ -23,7 +23,8 @@
   },
   "build": {
     "appId": "local.codex.api.manager",
-    "productName": "Codex API Manager",
+    "productName": "API Switchboard",
+    "executableName": "Codex API Manager",
     "asar": true,
     "electronDist": "node_modules/electron/dist",
     "directories": {

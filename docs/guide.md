@@ -1,4 +1,4 @@
-# Codex API Manager 使用指南
+# API 切换台使用指南
 
 [← 返回项目首页](../README.md)
 

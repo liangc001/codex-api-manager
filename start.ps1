@@ -30,6 +30,6 @@ try {
     Start-Process $url
 } catch {
     Add-Type -AssemblyName System.Windows.Forms
-    [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Codex API Manager') | Out-Null
+    [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'API Switchboard') | Out-Null
     exit 1
 }

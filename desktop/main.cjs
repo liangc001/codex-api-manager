@@ -5,6 +5,8 @@ const path = require('node:path');
 const { spawn, execFile } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const codexRestarter = require('./restart-codex.cjs');
+const displayName = 'API 切换台';
+app.setName(displayName);
 
 let window;
 let manager;
@@ -38,7 +40,7 @@ function renderTray(state, client = 'codex') {
   if (!tray || tray.isDestroyed()) return;
   if (client === 'claude') claudeTrayState = state; else codexTrayState = state;
   const current = codexTrayState?.profiles.find(p => p.active);
-  tray.setToolTip('Codex API Manager' + (current ? ` · ${current.name}` : ''));
+  tray.setToolTip(displayName + (current ? ` · ${current.name}` : ''));
   function group(profiles, target) {
     const groups = new Map();
     for (const p of profiles || []) {
@@ -361,7 +363,7 @@ else {
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);
     window = new BrowserWindow({ width: 1040, height: 820, minWidth: 560, minHeight: 600,
-      title: 'Codex API Manager', icon: path.join(__dirname, '..', 'assets', 'icon.png'), backgroundColor: '#f4f6f5', show: false, autoHideMenuBar: true,
+      title: displayName, icon: path.join(__dirname, '..', 'assets', 'icon.png'), backgroundColor: '#f4f6f5', show: false, autoHideMenuBar: true,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
     });
     window.removeMenu();
@@ -401,7 +403,7 @@ else {
       setInterval(check, 6 * 60 * 60 * 1000).unref();
     }
   }).catch(error => {
-    dialog.showErrorBox('Codex API Manager', error.code ? '无法启动，请检查本机数据目录的文件权限。' : error.message);
+    dialog.showErrorBox(displayName, error.code ? '无法启动，请检查本机数据目录的文件权限。' : error.message);
     app.quit();
   });
 }
@@ -412,7 +414,7 @@ app.on('before-quit', event => {
   if (updater?.status.phase === 'downloading') return;
   if (quitRequested) return;
   quitRequested = true;
-  if (window) window.setTitle('Codex API 管理 · 正在等待请求完成');
+  if (window) window.setTitle(`${displayName} · 正在等待请求完成`);
   manager.exclusive(async () => {
     const wasMonitoring = controller?.monitor.enabled;
     const wasClaudeMonitoring = claudeMonitor?.enabled;
@@ -436,17 +438,17 @@ app.on('before-quit', event => {
     if (restartAfterShutdown && !controller?.monitor.enabled) {
       restartAfterShutdown = false;
       showWindow();
-      if (window) { window.setTitle('Codex API 管理'); window.webContents.send('manager:tray-action', { action: 'monitor-stopped' }); }
+      if (window) { window.setTitle(displayName); window.webContents.send('manager:tray-action', { action: 'monitor-stopped' }); }
       dialog.showMessageBox(window, { type: 'warning', title: '监控已关闭', message: 'Codex 重启失败，请手动重启。', buttons: ['知道了'] }).catch(() => {});
       return;
     }
     if (updateRequested) {
       updateRequested = false;
       updater.status.phase = 'error'; updater.status.message = '暂时无法完成更新，旧版本已保留；请等待请求结束后重试。';
-      if (window) window.setTitle('Codex API 管理');
+      if (window) window.setTitle(displayName);
       return;
     }
-    if (window) window.setTitle('Codex API 管理');
+    if (window) window.setTitle(displayName);
     dialog.showMessageBox({ type: 'warning', title: '监控恢复失败',
       message: '配置恢复失败。保留备份退出后，可重新打开工具重试。',
       buttons: ['返回', '保留备份并退出'], defaultId: 0, cancelId: 0 }).then(result => {

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/hero.svg" alt="Codex API Manager — 多个 API，一个桌面工作台" width="100%">
+  <img src="docs/assets/hero.svg" alt="API 切换台（API Switchboard）" width="100%">
 </p>
 
 <p align="center">
@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-  <strong>多个 Codex API，一个桌面工作台。</strong><br>
-  管理 URL 与 Key，切换连接，重启 Codex，查看用量与本机请求。<br>
-  Windows 便携工具 · 支持 Codex App 与 CLI · 首次启动无预置账号
+  <strong>API 切换台 · Codex 与 Claude Code 的连接管理工具。</strong><br>
+  集中管理 URL 与 Key，一键切换连接，查看用量与本机请求。<br>
+  Windows 便携工具 · 支持 Codex App、Codex CLI 和 Claude Code CLI
 </p>
 
 <p align="center">
@@ -71,7 +71,7 @@
 
 **① 下载并启动**
 
-[下载 Codex-API-Manager.exe](https://github.com/liangc001/codex-api-manager/releases/latest/download/Codex-API-Manager.exe)，放到有写入权限的文件夹，双击启动。无需安装 Node.js 或打开浏览器。
+[下载 Windows 便携版](https://github.com/liangc001/codex-api-manager/releases/latest/download/Codex-API-Manager.exe)，放到有写入权限的文件夹，双击启动。下载文件沿用 `Codex-API-Manager.exe`，以兼容旧版更新。
 
 **② 添加 API**
 

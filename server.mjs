@@ -82,5 +82,5 @@ try { await listen(requestedPort); }
 catch (e) { if (e.code === 'EADDRINUSE') await listen(0); else throw e; }
 origin = `http://127.0.0.1:${server.address().port}`;
 await fs.writeFile(path.join(manager.dataDir, 'server.json'), JSON.stringify({ pid: process.pid, url: origin, startedAt: new Date().toISOString() }));
-console.log(`Codex API Manager: ${origin}`);
+console.log(`API 切换台: ${origin}`);
 process.on('SIGINT', () => manager.exclusive(() => controller.monitor.shutdown()).then(() => server.close(() => process.exit(0))).catch(() => process.exit(1)));
