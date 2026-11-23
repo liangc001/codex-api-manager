@@ -71,7 +71,7 @@
 
 **① 下载并启动**
 
-[下载 Windows 便携版](https://github.com/liangc001/codex-api-manager/releases/latest/download/Codex-API-Manager.exe)，放到有写入权限的文件夹，双击启动。下载文件沿用 `Codex-API-Manager.exe`，以兼容旧版更新。
+[下载 Windows 便携版](https://github.com/liangc001/codex-api-manager/releases/latest/download/Codex-API-Manager.exe)，放到有写入权限的文件夹，双击启动。下载文件沿用 `Codex-API-Manager.exe`，以兼容旧版更新。首次启动输入维护者提供的密码，此电脑后续自动登录；更新仍在应用内完成。
 
 **② 添加 API**
 
@@ -132,16 +132,17 @@ Codex-API-Manager/
 <details>
 <summary>从源码运行 / 构建</summary>
 
-Windows，Node.js 22+：
+Windows，Node.js 22+、.NET 8 SDK：
 
 ```powershell
 npm ci
+npm run vpn:build    # 构建 VPN 后台服务
 npm run desktop      # 启动桌面开发版
 npm test             # 运行单元测试
 npm run build:exe    # 构建 Windows x64 便携版
 ```
 
-Electron · TOML · Lucide。开发数据保存在项目旁的 `data`，不加入版本控制、不打包进 EXE。
+Electron · .NET · TOML · Lucide。开发数据保存在项目旁的 `data`，不加入版本控制、不打包进 EXE。VPN 首页支持地区选择、延迟测速及 agy 独立线路，需导入自己的便携配置与核心。参见 [VPN 说明](docs/vpn-integration.md) 和 [登录说明](docs/access.md)。
 
 </details>
 

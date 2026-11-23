@@ -397,21 +397,21 @@ export class Manager {
     try { await this.writePair(snapshot.config, snapshot.auth); this.store.lastBackup = null; await this.persist(); }
     catch (error) { this.store.lastBackup = b; await this.writePair(config, auth); throw error; }
   }
-  async refresh(id) {
+  async refresh(id, fetcher) {
     const p = this.store.profiles.find(p => p.id === id);
     if (!p?.encryptedKey) throw new Error('请先填写此 API 的 Key。');
-    const result = await queryUsage(p, await this.codec.decrypt(p.encryptedKey));
+    const result = await queryUsage(p, await this.codec.decrypt(p.encryptedKey), fetcher);
     const previous = this.store;
     this.store = { ...previous, profiles: previous.profiles.map(item => item === p ? { ...p, usage: result } : item) };
     try { await this.persist(); }
     catch (error) { this.store = previous; throw error; }
     return result;
   }
-  async testConnection(id) {
+  async testConnection(id, fetcher) {
     const p = this.store.profiles.find(p => p.id === id);
     if (!p?.encryptedKey) throw new Error('请先填写此 API 的 Key。');
     const { testConnection } = await import('./support.mjs');
-    const result = await testConnection(p, await this.codec.decrypt(p.encryptedKey));
+    const result = await testConnection(p, await this.codec.decrypt(p.encryptedKey), fetcher);
     this.connectionTests.set(id, result);
     return result;
   }

@@ -30,6 +30,51 @@
       <button id="client-codex" type="button" aria-pressed="true"><i data-lucide="square-terminal"></i>Codex</button>
       <button id="client-claude" type="button" aria-pressed="false"><i data-lucide="terminal"></i>Claude Code</button>
     </nav>
+    <section id="vpn-workspace" aria-labelledby="vpn-title" hidden>
+      <div class="vpn-heading">
+        <h2 id="vpn-title"><i data-lucide="network"></i>VPN</h2>
+        <span id="vpn-status" role="status">读取中…</span>
+        <span id="vpn-scope" hidden></span>
+        <button id="vpn-more" type="button" aria-expanded="false" aria-controls="vpn-details" hidden><span>线路详情</span><i data-lucide="chevron-down"></i></button>
+      </div>
+      <div id="vpn-setup" hidden><button id="vpn-import" type="button" class="primary"><i data-lucide="folder-input"></i>导入 VPN 便携目录</button></div>
+      <div id="vpn-controls" hidden>
+        <dl class="vpn-readings">
+          <div class="vpn-exit-reading"><dt>实际出口</dt><dd id="vpn-exit"><span id="vpn-exit-country">—</span><code id="vpn-exit-ip" hidden></code></dd></div>
+          <div><dt>HTTPS 延迟</dt><dd><span id="vpn-latency">—</span><button id="vpn-refresh-latency" type="button" class="icon" aria-label="刷新 HTTPS 延迟" title="刷新 HTTPS 延迟"><i data-lucide="refresh-cw"></i></button></dd></div>
+          <div><dt>外网连通</dt><dd id="vpn-health">—</dd></div>
+        </dl>
+        <div class="vpn-buttons vpn-primary">
+          <div class="vpn-region-field"><label for="vpn-region">出口地区</label><select id="vpn-region"><option value="auto">自动选择</option></select>
+            <button id="vpn-load-regions" type="button" aria-label="加载出口地区" hidden><span>自动选择</span><i data-lucide="chevron-down"></i></button></div>
+          <button id="vpn-connect" type="button" class="primary"><i data-lucide="plug"></i><span>连接</span></button>
+          <button id="vpn-disconnect" type="button" title="断开连接" aria-label="断开连接" hidden><i data-lucide="unplug"></i><span>断开</span></button>
+          <button id="vpn-cancel-connect" type="button" hidden>取消连接</button>
+          <button id="vpn-codex" type="button"><i data-lucide="square-terminal"></i>打开 Codex</button>
+        </div>
+      </div>
+      <div id="vpn-feedback" hidden>
+        <p id="vpn-error" class="notice error" role="status" hidden></p>
+        <button id="vpn-retry-status" type="button" hidden><i data-lucide="refresh-cw"></i>重试</button>
+      </div>
+      <p id="vpn-notice" class="vpn-notice" role="status" hidden></p>
+      <div id="vpn-details" hidden>
+        <section class="vpn-detail-group" aria-labelledby="vpn-line-title">
+          <div class="vpn-group-heading"><h3 id="vpn-line-title"><i data-lucide="activity"></i>线路检测</h3><button id="vpn-check-sources" type="button">检测线路</button></div>
+          <dl id="vpn-sources" class="vpn-sources"></dl>
+          <details id="vpn-rankings"><summary>地区延迟排行 <small id="vpn-ranking-status"></small></summary>
+            <div class="vpn-buttons"><button id="vpn-benchmark" type="button"><i data-lucide="timer"></i>测速全部</button><button id="vpn-cancel-benchmark" type="button" hidden>停止</button></div>
+            <ol id="vpn-ranking-list" class="vpn-ranking-list"></ol>
+            <p id="vpn-ranking-empty" class="vpn-empty">暂无测速结果</p>
+          </details>
+        </section>
+        <section class="vpn-detail-group" aria-labelledby="vpn-agy-title">
+          <div class="vpn-group-heading"><h3 id="vpn-agy-title"><i data-lucide="globe"></i>agy 美国代理</h3><span id="vpn-agy-status" role="status"></span></div>
+          <div class="vpn-buttons"><button id="vpn-agy" type="button"><i data-lucide="globe"></i><span>启动代理</span></button>
+            <button id="vpn-agy-settings" type="button"><i data-lucide="copy"></i>复制代理命令</button></div>
+        </section>
+      </div>
+    </section>
     <section id="quick-guide" class="quick-guide" aria-label="新手引导" hidden>
       <div class="guide-heading"><span class="guide-label">快速开始</span><span id="guide-progress"></span><button id="close-guide" class="icon" title="退出教程" aria-label="退出教程"><i data-lucide="x"></i></button></div>
       <ol class="guide-steps" aria-label="教程进度"><li aria-label="添加"><span></span></li><li aria-label="切换"><span></span></li><li aria-label="重启"><span></span></li></ol>
@@ -116,6 +161,7 @@
           <button type="button" id="settings-tab-general" role="tab" aria-selected="true" aria-controls="settings-panel-general" data-settings-tab="general"><i data-lucide="sliders-horizontal"></i>外观与更新</button>
           <button type="button" id="settings-tab-data" role="tab" aria-selected="false" aria-controls="settings-panel-data" tabindex="-1" data-settings-tab="data"><i data-lucide="folder-open"></i>数据与日志</button>
           <button type="button" id="settings-tab-support" role="tab" aria-selected="false" aria-controls="settings-panel-support" tabindex="-1" data-settings-tab="support"><i data-lucide="wrench"></i>问题排查</button>
+          <button type="button" id="settings-tab-vpn" role="tab" aria-selected="false" aria-controls="settings-panel-vpn" tabindex="-1" data-settings-tab="vpn" hidden><i data-lucide="network"></i>VPN</button>
         </nav>
         <div class="settings-content">
           <section id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general">
@@ -125,6 +171,7 @@
       <h3 class="settings-section-title">软件更新</h3>
       <div class="update-control"><div><strong id="update-version">软件更新</strong><p id="update-status-text" role="status">检查 GitHub 发布版本</p></div><button id="check-update" type="button">检查更新</button></div>
       <label class="monitor-toggle"><input id="auto-updates" type="checkbox"><span>自动检查更新</span></label>
+      <div id="login-control" class="update-control" hidden><div><strong>自动登录</strong><p id="login-status-text"></p></div><button id="forget-login" type="button">清除登录</button></div>
 
           </section>
           <section id="settings-panel-data" role="tabpanel" aria-labelledby="settings-tab-data" hidden>
@@ -146,6 +193,30 @@
       <div class="diagnostic-control"><div class="support-label"><span class="support-icon"><i data-lucide="file-text"></i></span><div><strong>诊断文件</strong><p>排查运行问题，不含 Key 或对话</p></div></div><button id="export-diagnostics" type="button"><i data-lucide="file-down"></i>导出诊断</button></div>
 
 
+          </section>
+          <section id="settings-panel-vpn" role="tabpanel" aria-labelledby="settings-tab-vpn" hidden>
+            <div id="vpn-preferences">
+              <h3>连接选项</h3>
+              <label class="vpn-mode-label">代理范围<select id="vpn-mode"><option value="app">切换台及从中启动的客户端</option><option value="system">Windows 系统代理</option></select></label>
+              <div class="vpn-settings">
+                <label><input id="vpn-auto-recover" type="checkbox">断线后自动重连</label>
+                <label><input id="vpn-auto-connect" type="checkbox">打开切换台时连接</label>
+                <label><input id="vpn-startup" type="checkbox">开机启动切换台</label>
+              </div>
+              <details class="options" id="vpn-history-panel"><summary>线路导入与排查</summary>
+                <div class="vpn-buttons">
+                  <button id="vpn-update-researchlab" type="button"><i data-lucide="download"></i>更新 ResearchLab</button>
+                  <button id="vpn-import-v2ray" type="button"><i data-lucide="folder-input"></i>重新导入 v2rayN</button>
+                  <button id="vpn-import-clash" type="button"><i data-lucide="file-up"></i>导入 Clash</button>
+                  <button id="vpn-diagnostics" type="button"><i data-lucide="clipboard-copy"></i>复制诊断</button>
+                  <button id="vpn-shutdown" type="button"><i data-lucide="power"></i>停止 VPN 服务</button>
+                </div>
+                <p id="vpn-probe" hidden></p>
+                <ol id="vpn-history" class="vpn-ranking-list"></ol>
+                <p id="vpn-history-empty" class="vpn-empty">暂无诊断记录</p>
+              </details>
+            </div>
+            <p id="vpn-settings-message" class="notice" role="status" hidden></p>
           </section>
         </div>
       </div>
@@ -177,5 +248,6 @@
   </dialog>
   <dialog id="auto-repair-records-dialog" aria-labelledby="auto-repair-records-title"><div class="dialog-heading"><div><div class="repair-dialog-eyebrow"><i data-lucide="history"></i><span>连接活动</span></div><h2 id="auto-repair-records-title">旧对话兼容记录</h2><p>最近 10 批 · 本机加密保存</p></div><button id="close-auto-repair-records" type="button" class="icon" aria-label="关闭处理记录"><i data-lucide="x"></i></button></div><div class="auto-repair-records-body"><p id="auto-repair-records-status" role="status"></p><div id="auto-repair-records"></div><div id="auto-repair-pending"></div></div><div class="auto-repair-records-footer"><i data-lucide="shield-check"></i><span>仅调整连接归属，保留聊天正文</span></div></dialog>
   <script src="./session-repair-ui.js" defer></script>
+  <script src="./vpn-ui.js" defer></script>
 </body>
 </html>

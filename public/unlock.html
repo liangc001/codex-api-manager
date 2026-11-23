@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'">
+  <title>API 切换台</title>
+  <link rel="stylesheet" href="./unlock.css">
+  <script src="./lucide.js" defer></script>
+  <script src="./unlock.js" defer></script>
+</head>
+<body>
+  <main>
+    <div class="brand"><img src="../assets/icon.png" width="36" height="36" alt=""><span>API 切换台</span></div>
+    <h1>输入启动密码</h1>
+    <form id="unlock-form">
+      <label for="startup-password">密码</label>
+      <div class="password-field">
+        <input id="startup-password" type="password" autocomplete="off" maxlength="512" autofocus required>
+        <button id="toggle-password" type="button" aria-label="显示密码" title="显示密码" aria-pressed="false"><i data-lucide="eye"></i></button>
+      </div>
+      <p id="unlock-error" role="status" aria-live="polite"></p>
+      <button id="unlock-submit" type="submit">解锁<i data-lucide="arrow-right"></i></button>
+      <p class="remember-hint">此电脑下次自动登录</p>
+    </form>
+  </main>
+</body>
+</html>

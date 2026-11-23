@@ -457,6 +457,7 @@ $('model-list').onchange = event => { if (event.target.value) $('profile-form').
 $('hide-to-tray').hidden = !window.codexManager;
 $('hide-to-tray').onclick = async () => { try { await api('hide-to-tray', {}); } catch (e) { notice(e.message, true); } };
 window.codexManager?.onTrayAction?.(async value => {
+  if (value.action === 'vpn' || value.action === 'vpn-startup-failed') return;
   if (value.action === 'monitor-stopped') { markConnectionChange(); await load(); return; }
   if (busy || document.querySelector('dialog[open]')) { notice('请先完成当前操作，再使用托盘菜单。'); return; }
   if (value.action === 'restart') { await selectClient(value.client || 'codex'); $('restart-codex').click(); return; }
@@ -644,11 +645,15 @@ function selectSettingsTab(name, focus = false) {
     $(tab.getAttribute('aria-controls')).hidden = !selected;
     if (selected && focus) tab.focus();
   }
+  const vpnTab = name === 'vpn';
+  $('save-settings').hidden = vpnTab;
+  $('cancel-settings').textContent = vpnTab ? '关闭' : '取消';
+  $('settings-dialog').dispatchEvent(new CustomEvent('settings-tab-change', { detail: name }));
 }
 for (const tab of document.querySelectorAll('[data-settings-tab]')) {
   tab.onclick = () => selectSettingsTab(tab.dataset.settingsTab);
   tab.onkeydown = event => {
-    const tabs = [...document.querySelectorAll('[data-settings-tab]')];
+    const tabs = [...document.querySelectorAll('[data-settings-tab]:not([hidden])')];
     const index = tabs.indexOf(tab);
     const step = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : ['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 0;
     if (!step && !['Home', 'End'].includes(event.key)) return;
@@ -657,7 +662,26 @@ for (const tab of document.querySelectorAll('[data-settings-tab]')) {
     selectSettingsTab(tabs[target].dataset.settingsTab, true);
   };
 }
-$('settings').onclick = async () => { if (busy || !state.settings) return; try { await load(); renderSettings(); selectSettingsTab('general'); $('storage-details').open = false; $('settings-dialog').showModal(); icons(); } catch (e) { notice(e.message, true); } };
+$('settings').onclick = async () => {
+  if (busy || !state.settings) return;
+  try {
+    await load(); renderSettings(); selectSettingsTab('general'); $('storage-details').open = false;
+    if (window.codexManager) {
+      const login = await api('login-status');
+      $('login-control').hidden = !login.enabled;
+      $('login-status-text').textContent = login.remembered ? '已记住此电脑' : '下次启动需输入密码';
+      $('forget-login').disabled = !login.remembered;
+    }
+    $('settings-dialog').showModal(); icons();
+  } catch (e) { notice(e.message, true); }
+};
+$('forget-login').onclick = async () => {
+  try {
+    await api('forget-login');
+    $('login-status-text').textContent = '下次启动需输入密码';
+    $('forget-login').disabled = true;
+  } catch (e) { settingsNotice(e.message, true); }
+};
 $('close-settings').onclick = $('cancel-settings').onclick = () => $('settings-dialog').close();
 $('theme-select').onchange = () => window.managerTheme.apply($('theme-select').value);
 $('unlock-theme').onclick = async () => {
@@ -688,7 +712,7 @@ $('clear-logs').onclick = async () => {
 };
 $('logging-enabled').onchange = () => { $('retention-days').disabled = !$('logging-enabled').checked; };
 $('settings-form').onsubmit = async e => {
-  e.preventDefault(); if (busy) return;
+  e.preventDefault(); if (busy || $('save-settings').hidden) return;
   busy = true; $('settings-form').setAttribute('aria-busy', 'true');
   try {
     await api('settings', { dataDir: $('data-path').value, logging: $('logging-enabled').checked, retentionDays: Number($('retention-days').value), autoUpdates: $('auto-updates').checked, theme: $('theme-select').value });

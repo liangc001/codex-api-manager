@@ -1,15 +1,20 @@
-const { app, BrowserWindow, ipcMain, dialog, session, shell, Tray, Menu } = require('electron');
+const { app, BrowserWindow, clipboard, ipcMain, dialog, safeStorage, session, shell, Tray, Menu } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
 const { spawn, execFile } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const codexRestarter = require('./restart-codex.cjs');
+const { VpnClient, createVpnNetwork, childProxyEnvironment } = require('./vpn-client.cjs');
 const displayName = 'API 切换台';
 app.setName(displayName);
 
 let window;
+let accessWindow;
+let accessMemory;
+const requiresAccess = app.isPackaged || process.env.API_SWITCHBOARD_REQUIRE_ACCESS === '1';
 let manager;
+let vpn;
 let controller;
 let storage;
 let transfer;
@@ -25,20 +30,25 @@ let updateRequested = false;
 let tray;
 let closePrompt = false, confirmedWindowExit = false;
 let restartAfterShutdown = false;
+let vpnQuitFailed = false;
 async function restartForDirectConnection() {
+  if (await vpn?.proxyUrl()) throw new Error('请先完全退出 Codex，再从 VPN 面板打开，避免丢失代理设置。');
   const target = await codexRestarter.probe();
   if (target.running) await codexRestarter.restart(target);
   await storage.record('operation', { operation: 'restart-codex', outcome: 'ok' });
 }
-function showWindow() { if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } }
+function showWindow() {
+  const target = window || accessWindow;
+  if (target && !target.isDestroyed()) { if (target.isMinimized()) target.restore(); target.show(); target.focus(); }
+}
 function trayAction(action, id, client) {
   showWindow();
   if (!quitRequested && window && !window.webContents.isDestroyed()) window.webContents.send('manager:tray-action', { action, id, client });
 }
-let codexTrayState, claudeTrayState;
+let codexTrayState, claudeTrayState, vpnTrayState, vpnTraySignature;
 function renderTray(state, client = 'codex') {
   if (!tray || tray.isDestroyed()) return;
-  if (client === 'claude') claudeTrayState = state; else codexTrayState = state;
+  if (client === 'claude') claudeTrayState = state; else if (client === 'codex') codexTrayState = state;
   const current = codexTrayState?.profiles.find(p => p.active);
   tray.setToolTip(displayName + (current ? ` · ${current.name}` : ''));
   function group(profiles, target) {
@@ -50,12 +60,30 @@ function renderTray(state, client = 'codex') {
     }
     return groups.size ? [...groups].map(([url, submenu]) => ({ label: url.replace(/&/g, '&&'), submenu })) : [{ label: '暂无 API', enabled: false }];
   }
+  const netState = vpnTrayState;
+  const currentRegion = netState?.requestedRegion || netState?.preferredRegion || 'auto';
+  const runVpn = (op, region = currentRegion) => {
+    if (!quitRequested) vpn.call(op, { region, mode: netState?.proxyPort ? netState.mode : netState?.preferredMode || 'app' }).catch(() => trayAction('vpn'));
+  };
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '打开主窗口', click: showWindow },
     { label: '切换 Codex API', submenu: group(codexTrayState?.profiles, 'codex') },
     { label: '切换 Claude API', submenu: group(claudeTrayState?.profiles, 'claude') },
     { label: '重启 Codex', click: () => trayAction('restart') },
     { label: '打开 Claude Code CLI', click: () => trayAction('restart', undefined, 'claude') },
+    { label: 'VPN', submenu: [
+      { label: '查看 VPN', click: () => trayAction('vpn') },
+      { label: netState?.proxyPort ? ['已连接', netState.country, netState.latencyMs != null ? netState.latencyMs + ' ms' : null].filter(Boolean).join(' · ') : '未连接', enabled: false },
+      { label: netState?.proxyPort ? '重新连接' : '连接', enabled: !!netState?.imported && !netState.busy, click: () => runVpn('connect') },
+      { label: '断开 VPN', enabled: !!netState?.proxyPort || netState?.operation === 'connect', click: () => runVpn('disconnect') },
+      { label: '出口地区', submenu: (netState?.regions || [{ code: 'auto', label: '自动选择' }]).map(region => ({
+        type: 'checkbox', label: region.label, checked: region.code === currentRegion, enabled: !!netState?.imported && !netState.busy,
+        click: () => runVpn('connect', region.code),
+      })) },
+      { label: '刷新延迟', enabled: !!netState?.proxyPort && !netState.busy, click: () => runVpn('latency') },
+      { label: '打开 Codex', enabled: !!netState?.imported && !netState.busy, click: () => runVpn('open-codex') },
+      { label: '停止 agy 代理', enabled: !!netState?.agyActive, click: () => runVpn('disconnect-agy') },
+    ] },
     { label: '收起到托盘', click: () => window?.hide() },
     { type: 'separator' }, { label: '退出', click: () => { if (controller.monitor.enabled) { showWindow(); window.close(); } else app.quit(); } },
   ]));
@@ -76,9 +104,19 @@ try {
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 else {
-  app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } });
+  app.on('second-instance', showWindow);
   app.whenReady().then(async () => {
     if (storageError) throw storageError;
+    if (requiresAccess) {
+      const { createLoginMemory } = require('./access-memory.cjs');
+      accessMemory = createLoginMemory({ file: path.join(dataRoot, 'cache', 'startup-access.bin'),
+        safeStorage, record: require('./access-config.cjs') });
+    }
+    if (accessMemory && !await accessMemory.trusted()) {
+      const { unlockApplication } = require('./access-window.cjs');
+      const accepted = await unlockApplication({ BrowserWindow, ipcMain, memory: accessMemory, onWindow: value => { accessWindow = value; } });
+      if (!accepted) { app.quit(); return; }
+    }
     const { Manager } = await import('../core.mjs');
     const overrides = app.isPackaged ? {} : {
       ...(process.env.CODEX_MANAGER_TEST_HOME ? { codexHome: process.env.CODEX_MANAGER_TEST_HOME } : {}),
@@ -90,17 +128,52 @@ else {
     manager = new Manager({ ...overrides, dataDir: storage.settings.dataDir, codec: await portableCodec(dataRoot) });
     manager.storage = storage;
     await manager.init();
+    const vpnFixture = !app.isPackaged && process.env.API_SWITCHBOARD_VPN_FIXTURE;
+    const vpnHome = path.join(dataRoot, 'vpn');
+    const vpnData = path.join(vpnHome, 'data');
+    const loginPath = app.isPackaged && process.env.PORTABLE_EXECUTABLE_FILE;
+    const loginOptions = loginPath ? { name: 'ApiSwitchboardVpn', path: loginPath, args: [] } : null;
+    let fixtureStartWithWindows = false, vpnStopped = false;
+    function vpnStartupEnabled() {
+      if (vpnFixture) return fixtureStartWithWindows;
+      try { return !!loginOptions && app.getLoginItemSettings(loginOptions).openAtLogin; }
+      catch { return false; }
+    }
+    function vpnPreferences() {
+      try { return JSON.parse(fsSync.readFileSync(path.join(vpnData, 'preferences.json'), 'utf8')); }
+      catch { return {}; }
+    }
+    function vpnOverview(stopped = false) {
+      const prefs = vpnPreferences();
+      return { imported: fsSync.existsSync(path.join(vpnData, 'portable.key')), dormant: true, stopped,
+        preferredRegion: prefs.LastRegion, preferredMode: prefs.LastMode,
+        autoConnect: prefs.AutoConnect === true, autoRecover: prefs.AutoRecover !== false };
+    }
+    const vpnResult = result => {
+      const signature = JSON.stringify([result.imported, result.proxyPort, result.busy, result.country, result.latencyMs, result.operation,
+        result.agyActive, result.regions, result.requestedRegion, result.preferredRegion, result.mode, result.preferredMode]);
+      if (signature !== vpnTraySignature) {
+        vpnTraySignature = signature;
+        vpnTrayState = result;
+        renderTray(null, 'vpn');
+      }
+      return { result: { ...result, startWithWindows: vpnStartupEnabled(), canSetStartup: !!(vpnFixture || loginOptions) } };
+    };
+    vpn = new VpnClient({ home: vpnHome, executable: app.isPackaged ? path.join(process.resourcesPath, 'vpn', 'Switchboard.Vpn.exe')
+      : path.join(__dirname, '..', 'vpn', 'artifacts', vpnFixture ? 'fixture' : 'broker', 'Switchboard.Vpn.exe'),
+      fixtureArgs: vpnFixture ? [vpnHome, path.join(dataRoot, 'vpn-fixture-runtime'), process.env.API_SWITCHBOARD_VPN_TEST_BASE, process.env.API_SWITCHBOARD_VPN_TEST_RELAY] : undefined });
+    const network = createVpnNetwork(vpn, session);
+    const forPartition = scope => network(scope, (url, options) => session.fromPartition(scope).fetch(url, options));
     const { MonitorController } = await import('../monitor.mjs');
     const { createMonitorRequester } = require('./monitor-transport.cjs');
-    const monitorSession = session.fromPartition('codex-monitor-network');
-    controller = new MonitorController(manager, { requester: createMonitorRequester(monitorSession) });
+    controller = new MonitorController(manager, { requester: createMonitorRequester({ fetch: forPartition('codex-monitor-network') }) });
     await controller.init();
     const { TransferService } = await import('../transfer.mjs');
     const { ClaudeManager, ClaudeMonitor, claudeProfile } = await import('../claude.mjs');
     const claude = new ClaudeManager({ dataDir: manager.dataDir, codec: manager.codec });
     await claude.init();
     claude.storage = storage;
-    claudeMonitor = new ClaudeMonitor(claude, { requester: createMonitorRequester(session.fromPartition('claude-monitor-network')) });
+    claudeMonitor = new ClaudeMonitor(claude, { requester: createMonitorRequester({ fetch: forPartition('claude-monitor-network') }) });
     await claudeMonitor.recover().catch(() => { claudeMonitor.recoveryWarning = 'Claude 监控配置未自动恢复，请检查 Claude 用户设置并重新打开工具。'; });
     transfer = new TransferService(manager, controller.monitor, { protectedHomes: [claude.home] });
     claudeTransfer = new TransferService(claude, claudeMonitor, { format: 'claude-code-api-manager', validate: claudeProfile,
@@ -114,10 +187,9 @@ else {
     });
     await autoSessionRepair.init();
     const { Updater } = await import('../updater.mjs');
-    const updateSession = session.fromPartition('codex-update-network');
     updater = new Updater({ version: app.getVersion(), root: path.join(dataRoot, 'cache', 'updates'),
       target: app.isPackaged && process.env.PORTABLE_EXECUTABLE_FILE ? process.env.PORTABLE_EXECUTABLE_FILE : null,
-      fetcher: (url, options) => updateSession.fetch(url, options) });
+      fetcher: forPartition('codex-update-network') });
     await updater.cleanCompleted();
     await storage.record('startup');
     // Only the trusted editor can request a saved key; general state never includes secrets.
@@ -130,11 +202,55 @@ else {
         const input = data || {};
         const isClaude = input.client === 'claude';
         const targetManager = isClaude ? claude : manager, targetMonitor = isClaude ? claudeMonitor : controller.monitor;
+        if (route === 'login-status') return { enabled: requiresAccess, remembered: !!await accessMemory?.trusted() };
+        if (route === 'forget-login') {
+          await accessMemory?.forget();
+          return { ok: true };
+        }
         if (route === 'metrics') return targetMonitor.summary();
         if (route === 'update-status') return updater.state();
         if (quitRequested) throw new Error('程序正在等待请求完成并退出。');
         if (route === 'check-update') return await updater.check();
         if (['downloading', 'installing'].includes(updater.status.phase)) throw new Error('软件正在更新，请稍候。');
+        if (route === 'vpn-overview') {
+          return vpnResult(vpn.child ? await vpn.call('status') : vpnOverview(vpnStopped));
+        }
+        if (route === 'vpn-startup') {
+          if (typeof input.value !== 'boolean') throw new Error('无效的启动设置。');
+          if (vpnFixture) fixtureStartWithWindows = input.value;
+          else if (loginOptions) app.setLoginItemSettings({ ...loginOptions, openAtLogin: input.value });
+          else throw new Error('请从便携 EXE 启动后再设置。');
+          return vpnResult(vpn.child ? await vpn.call('status') : vpnOverview(vpnStopped));
+        }
+        if (['vpn-import', 'vpn-import-clash', 'vpn-import-v2ray'].includes(route)) {
+          const clash = route === 'vpn-import-clash';
+          const title = clash ? '选择 Clash 配置文件' : route === 'vpn-import-v2ray' ? '选择原 v2rayN 文件夹' : '选择可信的 VPN 便携目录（含 data 和 cores）';
+          const chosen = await dialog.showOpenDialog(window, { title, properties: [clash ? 'openFile' : 'openDirectory'],
+            ...(clash ? { filters: [{ name: 'Clash YAML', extensions: ['yaml', 'yml'] }] } : {}) });
+          if (chosen.canceled) return { canceled: true };
+          if (route !== 'vpn-import') {
+            const answer = await dialog.showMessageBox(window, { type: 'warning', buttons: ['取消', '导入'], defaultId: 0, cancelId: 0,
+              message: '替换切换台中的对应线路配置？', detail: '原 VPN 和所选文件不会被修改。' });
+            if (answer.response !== 1) return { canceled: true };
+          }
+          vpnStopped = false;
+          return vpnResult(await vpn.call(route.slice(4), { directory: chosen.filePaths[0] }));
+        }
+        if (route === 'vpn-diagnostics') {
+          clipboard.writeText(JSON.stringify(await vpn.call('diagnostics'), null, 2));
+          return { ok: true };
+        }
+        if (route === 'vpn-agy-settings') {
+          clipboard.writeText((await vpn.call('agy-settings')).text);
+          return { ok: true };
+        }
+        const vpnCommands = new Set(['status', 'regions', 'connect', 'disconnect', 'cancel-connect', 'benchmark', 'cancel-benchmark', 'latency', 'agy',
+          'disconnect-agy', 'open-codex', 'shutdown', 'set-preference', 'check-sources', 'update-researchlab']);
+        if (route.startsWith('vpn-') && vpnCommands.has(route.slice(4))) {
+          const result = await vpn.call(route.slice(4), { region: input.region, mode: input.mode, key: input.key, value: input.value });
+          vpnStopped = route === 'vpn-shutdown';
+          return vpnResult(vpnStopped ? vpnOverview(true) : result);
+        }
         if (route === 'install-update') {
           await updater.prepare();
           updateRequested = true;
@@ -235,11 +351,13 @@ else {
         if (route === 'open-claude-cli' && isClaude) {
           await new Promise((resolve, reject) => execFile('where.exe', ['claude'], { windowsHide: true, timeout: 5000 },
             error => error ? reject(new Error('未在 PATH 找到 Claude Code，请从已配置的终端运行 claude。')) : resolve()));
-          const child = spawn('cmd.exe', ['/d', '/k', 'claude'], { cwd: app.getPath('home'), detached: true, stdio: 'ignore', windowsHide: false });
+          const proxyEnv = childProxyEnvironment(await vpn.proxyUrl());
+          const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !Object.hasOwn(proxyEnv, key.toUpperCase())));
+          const child = spawn('cmd.exe', ['/d', '/k', 'claude'], { cwd: app.getPath('home'), env: { ...env, ...proxyEnv }, detached: true, stdio: 'ignore', windowsHide: false });
           await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', () => reject(new Error('无法打开 Claude Code CLI。'))); });
           child.unref(); return { ok: true };
         }
-        if (route === 'list-models') return { ok: true, result: await targetManager.listModels(input, (url, options) => session.fromPartition(isClaude ? 'claude-model-network' : 'codex-model-network').fetch(url, options)) };
+        if (route === 'list-models') return { ok: true, result: await targetManager.listModels(input, forPartition(isClaude ? 'claude-model-network' : 'codex-model-network')) };
         if (route === 'test-connection') {
           const profile = targetManager.store.profiles.find(p => p.id === input.id);
           if (!profile?.encryptedKey) throw new Error('请先填写此 API 的 Key。');
@@ -252,7 +370,7 @@ else {
           return { ok: true, result: await targetManager.exclusive(async () => {
             const current = targetManager.store.profiles.find(p => p.id === input.id);
             if (current !== profile) throw new Error('此 API 已被修改，请重新测试。');
-            const result = await targetManager.testConnection(input.id);
+            const result = await targetManager.testConnection(input.id, network(isClaude ? 'claude-test' : 'codex-test'));
             await storage.record('operation', { operation: route, outcome: result.status, profileId: input.id,
               status: result.httpStatus, durationMs: result.durationMs, errorKind: result.kind });
             return result;
@@ -268,6 +386,7 @@ else {
           return { ok: true };
         }
         if (route === 'restart-codex') {
+          if (await vpn.proxyUrl()) throw new Error('VPN 已连接。请保存工作并退出 Codex，再从 VPN 面板打开。');
           if (restartingCodex) throw new Error('Codex 正在重启，请稍候。');
           restartingCodex = true;
           try {
@@ -339,7 +458,7 @@ else {
           },
           restore: () => { if (claudeMonitor.enabled) throw new Error('请先关闭 Claude 请求监控。'); return claude.restore(); },
           import: async () => { if (claudeMonitor.enabled || !await claude.importCurrent()) throw new Error('请先关闭 Claude 请求监控，并配置自定义网关与 Key。'); },
-          refresh: () => claude.refresh(input.id),
+          refresh: () => claude.refresh(input.id, network('claude-usage')),
         } : {
           'read-key': async () => ({ key: await manager.readKey(input.id) }),
           save: () => controller.save(input), delete: () => controller.remove(input.id),
@@ -347,7 +466,7 @@ else {
           switch: () => controller.switchTo(input.id), restore: () => controller.restore(),
           monitor: () => controller.setMonitoring(input.enabled === true),
           import: async () => { if (!await controller.importCurrent()) throw new Error('当前 Codex 没有可导入的 API 地址和 Key。'); },
-          refresh: () => manager.refresh(input.id),
+          refresh: () => manager.refresh(input.id, network('codex-usage')),
         };
         if (!Object.hasOwn(actions, route)) throw new Error('不存在的操作。');
         const result = await targetManager.exclusive(async () => {
@@ -374,7 +493,17 @@ else {
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (event, url) => { if (url !== trustedPage) event.preventDefault(); });
     window.webContents.on('will-attach-webview', event => event.preventDefault());
-    window.once('ready-to-show', () => window.show());
+    window.once('ready-to-show', () => {
+      window.show();
+      accessWindow?.destroy(); accessWindow = null;
+    });
+    const startupVpn = vpnPreferences();
+    if (startupVpn.AutoConnect === true && fsSync.existsSync(path.join(vpnData, 'portable.key'))) {
+      setImmediate(() => vpn.call('connect').catch(() => {
+        if (window && !window.webContents.isDestroyed())
+          window.webContents.send('manager:tray-action', { action: 'vpn-startup-failed' });
+      }));
+    }
     window.on('close', event => {
       if (!finishingQuit && !quitRequested && !confirmedWindowExit) {
         event.preventDefault();
@@ -420,6 +549,9 @@ app.on('before-quit', event => {
     const wasClaudeMonitoring = claudeMonitor?.enabled;
     transfer?.discard(); claudeTransfer?.discard(); await controller?.monitor.shutdown();
     if (claudeMonitor) await claudeMonitor.manager.exclusive(() => claudeMonitor.shutdown());
+    vpnQuitFailed = false;
+    try { await vpn?.close(); }
+    catch (error) { vpnQuitFailed = true; throw error; }
     if (wasClaudeMonitoring && !updateRequested) await dialog.showMessageBox(window, { type: 'info', title: 'Claude 监控已关闭',
       message: '请重新打开 Claude Code CLI，以恢复直连。', buttons: ['知道了'] });
     if (wasMonitoring && !updateRequested) {
@@ -449,8 +581,8 @@ app.on('before-quit', event => {
       return;
     }
     if (window) window.setTitle(displayName);
-    dialog.showMessageBox({ type: 'warning', title: '监控恢复失败',
-      message: '配置恢复失败。保留备份退出后，可重新打开工具重试。',
+    dialog.showMessageBox({ type: 'warning', title: vpnQuitFailed ? 'VPN 清理未确认' : '监控恢复失败',
+      message: vpnQuitFailed ? '无法确认 VPN 已清理。退出后请检查 Windows 代理设置。' : '配置恢复失败。保留备份退出后，可重新打开工具重试。',
       buttons: ['返回', '保留备份并退出'], defaultId: 0, cancelId: 0 }).then(result => {
       if (result.response === 1) { finishingQuit = true; app.quit(); }
     });

@@ -25,3 +25,12 @@ claude-profiles.json
 claude-api-profiles*.json
 claude-api-diagnostics*.json
 claude-monitor-session.enc
+vpn/bin/
+vpn/obj/
+vpn/artifacts/
+*.protected
+portable.key
+proxy-lease.json
+vpn-diagnostics*.json
+startup-access.bin
+release-password.txt
