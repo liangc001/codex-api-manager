@@ -5,6 +5,9 @@
   const error = document.getElementById('unlock-error');
   const toggle = document.getElementById('toggle-password');
   let waiting = false;
+  window.startupAccess.onProgress?.(message => {
+    if (waiting && typeof message === 'string') submit.textContent = message;
+  });
   toggle.onclick = () => {
     const visible = input.type === 'password';
     input.type = visible ? 'text' : 'password';
@@ -19,6 +22,7 @@
     event.preventDefault();
     if (waiting) return;
     waiting = true; submit.disabled = true; error.textContent = '';
+    submit.textContent = '正在验证…';
     try {
       const result = await window.startupAccess.unlock(input.value);
       input.value = '';
@@ -28,11 +32,11 @@
       if (result.ok) { submit.textContent = '正在打开…'; return; }
       error.textContent = result.error || '无法解锁，请重试。';
       input.setAttribute('aria-invalid', 'true');
-      setTimeout(() => { waiting = false; submit.disabled = false; input.focus(); }, Math.min(30000, Math.max(0, result.retryAfterMs || 0)));
+      setTimeout(() => { waiting = false; submit.disabled = false; submit.textContent = '解锁'; input.focus(); }, Math.min(30000, Math.max(0, result.retryAfterMs || 0)));
     } catch {
       input.value = '';
       error.textContent = '无法验证密码，请重新打开软件。';
-      waiting = false; submit.disabled = false;
+      waiting = false; submit.disabled = false; submit.textContent = '解锁';
     }
   };
   input.addEventListener('input', () => input.removeAttribute('aria-invalid'));

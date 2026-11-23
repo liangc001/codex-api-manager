@@ -7,11 +7,12 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 
 const oldExe = path.resolve(process.argv[2] || 'dist/Codex-API-Manager.exe');
-const newExe = path.resolve(process.argv[3] || 'dist-public-1.0.53/Codex-API-Manager.exe');
+const newExe = path.resolve(process.argv[3] || 'dist-public-1.0.54/Codex-API-Manager.exe');
 const oldRuntime = path.resolve(process.argv[4] || 'dist/win-unpacked/Codex API Manager.exe');
-const newRuntime = path.resolve(process.argv[5] || 'dist-public-1.0.53/win-unpacked/Codex API Manager.exe');
+const newRuntime = path.resolve(process.argv[5] || 'dist-public-1.0.54/win-unpacked/Codex API Manager.exe');
 const version = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const password = process.env.API_SWITCHBOARD_QA_UNLOCK_PASSWORD;
+const emptyVpn = process.env.API_SWITCHBOARD_QA_EMPTY_VPN === '1';
 if (!password) throw new Error('Supply the startup password in API_SWITCHBOARD_QA_UNLOCK_PASSWORD.');
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'switchboard-update-access-'));
 const target = path.join(root, 'renamed-switchboard.exe'), data = path.join(root, 'data');
@@ -62,13 +63,16 @@ try {
   const before = hash(await fs.readFile(path.join(data, 'profiles.json')));
   const keyBefore = hash(await fs.readFile(path.join(data, 'secrets.key')));
   const preserved = new Map();
-  for (const [name, bytes] of [
+  const retainedFiles = [
     ['backups/update-preserve.enc', Buffer.from('synthetic backup')],
+  ];
+  if (!emptyVpn) retainedFiles.push(
     ['vpn/data/portable.key', crypto.randomBytes(32)],
     ['vpn/data/clash.protected', crypto.randomBytes(96)],
     ['vpn/data/preferences.json', Buffer.from('{"AutoConnect":false,"LastMode":"app"}')],
     ['vpn/cores/fixture-marker.txt', Buffer.from('synthetic core directory marker')],
-  ]) {
+  );
+  for (const [name, bytes] of retainedFiles) {
     const file = path.join(data, name);
     await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, bytes);
     preserved.set(file, hash(bytes));
@@ -114,10 +118,17 @@ try {
   await locked.locator('#unlock-submit').click();
   const main = await until(async () => app.windows().find(w => /\/index\.html$/.test(w.url())));
   await main.waitForFunction(() => document.querySelector('#count')?.textContent === '1');
+  if (emptyVpn) {
+    await main.locator('#vpn-controls').waitFor();
+    assert.equal(await main.locator('#vpn-setup').isVisible(), false);
+    for (const file of ['data/portable.key', 'cores/mihomo.exe', 'cores/sing-box.exe'])
+      assert.ok((await fs.stat(path.join(data, 'vpn', file))).size > 0);
+  }
   assert.equal((await main.evaluate(() => window.codexManager.request('login-status'))).remembered, true);
   assert.equal(hash(await fs.readFile(path.join(data, 'secrets.key'))), keyBefore);
   for (const [file, checksum] of preserved) assert.equal(hash(await fs.readFile(file)), checksum, 'Startup changed a preserved data file.');
-  console.log('Real upgrade to ' + version + ' passed: same EXE path, checksum, restart, API/key/backup/VPN data preserved, password unlock and automatic login.');
+  console.log('Real upgrade to ' + version + ' passed: same EXE path, checksum, restart, API/key/backup preserved, ' +
+    (emptyVpn ? 'VPN automatically installed without import' : 'existing VPN data preserved') + ', password unlock and automatic login.');
 } finally {
   await app?.close();
   stopTestCopy();

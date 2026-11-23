@@ -11,6 +11,11 @@ internal static class Program
     {
         try
         {
+            if (args is ["--validate-data", var dataHome])
+            {
+                PortableImport.Open(Path.GetFullPath(dataHome));
+                return 0;
+            }
             if (args is ["--watchdog", var pid, var ticks, var root])
             {
                 Paths.RuntimeRoot = Path.GetFullPath(root);

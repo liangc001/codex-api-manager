@@ -1,6 +1,6 @@
 {
   "name": "codex-api-manager",
-  "version": "1.0.53",
+  "version": "1.0.54",
   "private": true,
   "type": "module",
   "description": "Local Windows API switchboard for Codex and Claude Code",
@@ -12,6 +12,7 @@
     "build:exe": "npm run vpn:build && node desktop/prepare.mjs && electron-builder --win portable --x64 --publish never",
     "vpn:build": "node vpn/build.mjs",
     "vpn:fixture": "node vpn/build.mjs --fixture",
+    "vpn:bundle": "node vpn/pack-bundle.mjs",
     "build:vpn-preview": "npm run vpn:build && node desktop/prepare.mjs && electron-builder --win portable --x64 --publish never",
     "test": "node --test test/*.test.mjs"
   },
@@ -44,6 +45,7 @@
       "desktop/access-window.cjs",
       "desktop/access-preload.cjs",
       "desktop/access-memory.cjs",
+      "desktop/vpn-bundle.cjs",
       "core.mjs",
       "claude.mjs",
       "monitor.mjs",
@@ -62,6 +64,7 @@
     ],
     "extraResources": [
       { "from": "vpn/artifacts/broker", "to": "vpn", "filter": ["Switchboard.Vpn.exe"] },
+      { "from": "vpn/artifacts/distribution", "to": "vpn", "filter": ["bootstrap.enc"] },
       { "from": "vpn/licenses", "to": "vpn/licenses", "filter": ["*-LICENSE.txt"] }
     ],
     "win": {

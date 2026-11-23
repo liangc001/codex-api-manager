@@ -2,7 +2,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createPasswordCheck } = require('./access-check.cjs');
 
-async function unlockApplication({ BrowserWindow, ipcMain, onWindow, record, memory }) {
+async function unlockApplication({ BrowserWindow, ipcMain, onWindow, record, memory, prepare }) {
   const check = createPasswordCheck(record || require('./access-config.cjs'));
   const file = path.join(__dirname, '..', 'public', 'unlock.html');
   const trustedPage = pathToFileURL(file).href;
@@ -21,20 +21,38 @@ async function unlockApplication({ BrowserWindow, ipcMain, onWindow, record, mem
   win.webContents.on('will-navigate', (event, url) => { if (url !== trustedPage) event.preventDefault(); });
   win.webContents.on('will-attach-webview', event => event.preventDefault());
   let accepted = false, resolve;
+  let preparing = false, closing = false;
   const unlocked = new Promise(done => { resolve = done; });
   ipcMain.handle('access:unlock', async (event, password) => {
     if (win.isDestroyed() || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame ||
         event.senderFrame.url !== trustedPage) return { ok: false, error: '无法解锁此窗口。' };
     if (accepted) return { ok: true };
+    if (preparing) return { ok: false, error: '正在准备，请稍候。', retryAfterMs: 1000 };
+    let material;
     try {
       const result = await check(password);
       if (result.ok && !win.isDestroyed()) {
-        try { await memory?.remember(); }
+        preparing = true;
+        try {
+          if (prepare) {
+            win.webContents.send('access:progress', '正在准备 VPN…');
+            material = await prepare(password);
+          }
+        } catch { return { ok: false, error: 'VPN 自动配置未完成，请检查磁盘空间与目录权限后重试。', retryAfterMs: 1000 }; }
+        if (win.isDestroyed() || closing) return { ok: false };
+        try { await memory?.remember(material); }
         catch { return { ok: false, error: '无法保存登录状态，请检查本机目录权限后重试。', retryAfterMs: 1000 }; }
         if (!win.isDestroyed()) { accepted = true; resolve(true); }
       }
       return result;
     } catch { return { ok: false, error: '暂时无法验证密码，请重试。', retryAfterMs: 1000 }; }
+    finally {
+      material?.bundleKey?.fill(0); preparing = false;
+      if (closing && !win.isDestroyed()) win.destroy();
+    }
+  });
+  win.on('close', event => {
+    if (preparing && !accepted) { closing = true; event.preventDefault(); }
   });
   win.once('closed', () => {
     ipcMain.removeHandler('access:unlock');

@@ -29,8 +29,13 @@ test('remembered login is encrypted, bound to the current password and can be cl
     assert.equal(await login.trusted(), false);
     await login.remember();
     assert.equal(await login.trusted(), true);
+    const bundleKey = crypto.randomBytes(32);
+    await login.remember({ bundleId: 'fixture-bundle-id', bundleKey });
+    assert.deepEqual(await login.bundleKey('fixture-bundle-id'), bundleKey);
+    assert.equal(await login.bundleKey('different-bundle-id'), null);
     const encrypted = await fs.readFile(file);
     assert.equal(encrypted.includes(Buffer.from('fingerprint')), false);
+    assert.equal(encrypted.includes(bundleKey), false);
     assert.equal(await memory.createLoginMemory({ file, safeStorage, record: { ...record, hash: 'changed' } }).trusted(), false);
     assert.equal(await memory.createLoginMemory({ file, safeStorage: { ...safeStorage, decryptString() { throw new Error('different user'); } }, record }).trusted(), false);
     await fs.writeFile(file, 'tampered');

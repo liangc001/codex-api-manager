@@ -71,7 +71,7 @@
 
 **① 下载并启动**
 
-[下载 Windows 便携版](https://github.com/liangc001/codex-api-manager/releases/latest/download/Codex-API-Manager.exe)，放到有写入权限的文件夹，双击启动。下载文件沿用 `Codex-API-Manager.exe`，以兼容旧版更新。首次启动输入维护者提供的密码，此电脑后续自动登录；更新仍在应用内完成。
+[下载 Windows 便携版](https://github.com/liangc001/codex-api-manager/releases/latest/download/Codex-API-Manager.exe)，放到有写入权限的文件夹，双击启动。下载文件沿用 `Codex-API-Manager.exe`，以兼容旧版更新。首次启动输入维护者提供的密码，自动准备随包加密的 VPN，此电脑后续自动登录；更新仍在应用内完成。
 
 **② 添加 API**
 
@@ -142,7 +142,7 @@ npm test             # 运行单元测试
 npm run build:exe    # 构建 Windows x64 便携版
 ```
 
-Electron · .NET · TOML · Lucide。开发数据保存在项目旁的 `data`，不加入版本控制、不打包进 EXE。VPN 首页支持地区选择、延迟测速及 agy 独立线路，需导入自己的便携配置与核心。参见 [VPN 说明](docs/vpn-integration.md) 和 [登录说明](docs/access.md)。
+Electron · .NET · TOML · Lucide。开发数据保存在项目旁的 `data`，不加入版本控制。VPN 首页支持地区选择、延迟测速及 agy 独立线路；官方 EXE 提供维护者授权的加密运行资源，API Key 由用户自行配置。源码构建可导入自己的便携配置，或按 [VPN 说明](docs/vpn-integration.md) 生成加密资源。另见 [登录说明](docs/access.md)。
 
 便携版使用 NSIS 直接释放应用文件，减少启动时的中间解压和重复复制。更新只替换 EXE，保留旁边的完整 `data`，包括 API、密钥、设置、备份和 VPN 数据。需要移动软件时请一起移动 EXE 和 `data`。
 

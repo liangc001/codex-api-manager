@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
 const { spawn, execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const { pathToFileURL } = require('node:url');
 const codexRestarter = require('./restart-codex.cjs');
 const { VpnClient, createVpnNetwork, childProxyEnvironment } = require('./vpn-client.cjs');
@@ -107,14 +108,44 @@ else {
   app.on('second-instance', showWindow);
   app.whenReady().then(async () => {
     if (storageError) throw storageError;
+    const vpnHome = path.join(dataRoot, 'vpn');
+    const brokerPath = app.isPackaged ? path.join(process.resourcesPath, 'vpn', 'Switchboard.Vpn.exe')
+      : path.join(__dirname, '..', 'vpn/artifacts/broker/Switchboard.Vpn.exe');
+    const bootstrapPath = app.isPackaged ? path.join(process.resourcesPath, 'vpn', 'bootstrap.enc')
+      : process.env.API_SWITCHBOARD_TEST_BUNDLE;
+    const bundledVpn = require('./vpn-bundle.cjs');
+    let bootstrapInfo, needsBootstrap = false, bootstrapWarning = '';
+    if (bootstrapPath && fsSync.existsSync(bootstrapPath)) {
+      bootstrapInfo = await bundledVpn.bundleInfo(bootstrapPath);
+      try { needsBootstrap = await bundledVpn.needsSetup(vpnHome); }
+      catch { bootstrapWarning = '现有 VPN 配置不完整，已保留。请恢复完整数据目录。'; }
+    }
+    const installBundledVpn = key => bundledVpn.installBundle({ bundle: bootstrapPath, home: vpnHome, key,
+      validate: folder => promisify(execFile)(brokerPath, ['--validate-data', folder], { windowsHide: true, timeout: 30000, maxBuffer: 4096 }) });
     if (requiresAccess) {
       const { createLoginMemory } = require('./access-memory.cjs');
       accessMemory = createLoginMemory({ file: path.join(dataRoot, 'cache', 'startup-access.bin'),
         safeStorage, record: require('./access-config.cjs') });
     }
-    if (accessMemory && !await accessMemory.trusted()) {
+    let trusted = !!await accessMemory?.trusted();
+    if (trusted && needsBootstrap) {
+      const key = await accessMemory.bundleKey(bootstrapInfo.id);
+      if (key) {
+        try { await installBundledVpn(key); needsBootstrap = false; }
+        catch { trusted = false; }
+        finally { key.fill(0); }
+      } else trusted = false;
+    }
+    if (accessMemory && !trusted) {
       const { unlockApplication } = require('./access-window.cjs');
-      const accepted = await unlockApplication({ BrowserWindow, ipcMain, memory: accessMemory, onWindow: value => { accessWindow = value; } });
+      const accepted = await unlockApplication({ BrowserWindow, ipcMain, memory: accessMemory, onWindow: value => { accessWindow = value; },
+        prepare: bootstrapInfo ? async password => {
+          const key = await bundledVpn.bundleKey(password, bootstrapInfo.salt);
+          try {
+            if (needsBootstrap) { await installBundledVpn(key); needsBootstrap = false; }
+            return { bundleId: bootstrapInfo.id, bundleKey: key };
+          } catch (error) { key.fill(0); throw error; }
+        } : undefined });
       if (!accepted) { app.quit(); return; }
     }
     const { Manager } = await import('../core.mjs');
@@ -129,7 +160,6 @@ else {
     manager.storage = storage;
     await manager.init();
     const vpnFixture = !app.isPackaged && process.env.API_SWITCHBOARD_VPN_FIXTURE;
-    const vpnHome = path.join(dataRoot, 'vpn');
     const vpnData = path.join(vpnHome, 'data');
     const loginPath = app.isPackaged && process.env.PORTABLE_EXECUTABLE_FILE;
     const loginOptions = loginPath ? { name: 'ApiSwitchboardVpn', path: loginPath, args: [] } : null;
@@ -146,6 +176,7 @@ else {
     function vpnOverview(stopped = false) {
       const prefs = vpnPreferences();
       return { imported: fsSync.existsSync(path.join(vpnData, 'portable.key')), dormant: true, stopped,
+        error: bootstrapWarning,
         preferredRegion: prefs.LastRegion, preferredMode: prefs.LastMode,
         autoConnect: prefs.AutoConnect === true, autoRecover: prefs.AutoRecover !== false };
     }

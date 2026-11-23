@@ -2,11 +2,11 @@
 
 ## 使用和构建
 
-Windows 便携版是 `Codex-API-Manager.exe`。首页直接显示 VPN，选择可信的便携文件夹（同一级目录包含 `data` 和 `cores`），等待导入后选择地区并连接。首次启动不会查找或导入已有 VPN 数据。“自动选择”按当前网络实测、仍有效且经过出口验证的 HTTPS 延迟排序；指定地区只接受对应国家或地区的实际出口。
+Windows 便携版是 `Codex-API-Manager.exe`。官方分发包首次输入启动密码后，自动解密并安装维护者授权的 VPN 资料与核心；已有完整配置保持原样。首页选择地区即可连接。“自动选择”按当前网络实测、仍有效且经过出口验证的 HTTPS 延迟排序；指定地区只接受对应国家或地区的实际出口。自行构建的无资源包版本仍支持手动导入可信的便携目录。
 
-首页的 **线路详情** 提供线路检测、测速和 agy。代理范围与启动选项位于 **设置 → VPN**，更新 ResearchLab、导入 v2rayN／Clash 和诊断放在该页的 **线路导入与排查**。首次仍需导入便携目录来安装本地核心；后续导入只替换切换台内的对应配置。“打开切换台时连接”使用最后一次成功连接的地区和代理模式；开机启动登记当前便携 EXE，不修改旧 VPN 的开机启动项。
+首页的 **线路详情** 提供线路检测、测速和 agy。代理范围与启动选项位于 **设置 → VPN**，更新 ResearchLab、导入 v2rayN／Clash 和诊断放在该页的 **线路导入与排查**。手动导入只替换切换台内的对应配置。“打开切换台时连接”使用最后一次成功连接的地区和代理模式；开机启动登记当前便携 EXE，不修改旧 VPN 的开机启动项。
 
-源码开发：`npm run vpn:build` 后执行 `npm run desktop`。打包：`npm run build:exe`（Windows x64，需 .NET 8 SDK 和项目 npm 依赖，SDK 可通过 `API_SWITCHBOARD_DOTNET` 指定）。产物包含独立的自包含 broker 和第三方许可，不包含核心、个人配置、许可证密钥或测试数据。正式版沿用公开仓库的应用内更新，首次运行输入启动密码后记住当前电脑；参见 [登录说明](access.md)。
+源码开发：`npm run vpn:build` 后执行 `npm run desktop`。打包：`npm run build:exe`（Windows x64，需 .NET 8 SDK 和项目 npm 依赖，SDK 可通过 `API_SWITCHBOARD_DOTNET` 指定）。若需生成加密分发资源，在环境变量 `API_SWITCHBOARD_BUNDLE_PASSWORD` 提供匹配的启动密码后执行 `npm run vpn:bundle -- <已授权的便携目录>`。产物 `vpn/artifacts/distribution/bootstrap.enc` 仅用于随 EXE 分发，不提交源码仓库。脚本只接受八项白名单文件，不打包 API、偏好设置、日志、历史或其他文件。正式版沿用公开仓库的应用内更新，首次运行输入启动密码后记住当前电脑；参见 [登录说明](access.md)。
 
 ## 代理与退出
 
@@ -18,6 +18,8 @@ Windows 便携版是 `Codex-API-Manager.exe`。首页直接显示 VPN，选择�
 ## 本地文件与审查入口
 
 导入先验证再复制，不写回用户选择的目录，不重建缺失的密钥，不覆盖已有导入。导入产物位于 EXE 旁 `data/vpn/data` 与 `data/vpn/cores`，使用仅当前用户和 SYSTEM 可访问的 ACL。带原密钥的数据可解密，整个 `data/vpn` 不应共享。租约、线路偏好和临时核心配置在 `%LOCALAPPDATA%/ApiSwitchboard/Vpn`。不要共享运行目录；脱敏诊断只包含有限状态，不含 IP、节点名、密钥或原始日志。
+
+加密资源初始化在独立的受限目录中完成，依次验证 GCM 认证、固定文件名单、长度、SHA256 及原 VPN 密文与配套密钥，然后原子移动到目标目录。失败时清理临时文件；原目录不完整时提示恢复数据，不覆盖或重建密钥。自动初始化只准备文件，不连接线路、不改系统代理。
 
 - `vpn/backend/`：复用 CampusLink 后端；`vpn/licenses/`：原第三方许可。
 - `vpn/Program.cs`、`vpn/BrokerFacade.cs`、`vpn/PortableImport.cs`：控制宿主、连接与导入边界。
