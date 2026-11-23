@@ -1,6 +1,6 @@
 {
   "name": "codex-api-manager",
-  "version": "1.0.52",
+  "version": "1.0.53",
   "private": true,
   "type": "module",
   "description": "Local Windows API switchboard for Codex and Claude Code",
@@ -71,6 +71,7 @@
     },
     "compression": "normal",
     "portable": {
+      "useZip": true,
       "artifactName": "Codex-API-Manager.exe"
     }
   }

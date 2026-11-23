@@ -144,6 +144,8 @@ npm run build:exe    # 构建 Windows x64 便携版
 
 Electron · .NET · TOML · Lucide。开发数据保存在项目旁的 `data`，不加入版本控制、不打包进 EXE。VPN 首页支持地区选择、延迟测速及 agy 独立线路，需导入自己的便携配置与核心。参见 [VPN 说明](docs/vpn-integration.md) 和 [登录说明](docs/access.md)。
 
+便携版使用 NSIS 直接释放应用文件，减少启动时的中间解压和重复复制。更新只替换 EXE，保留旁边的完整 `data`，包括 API、密钥、设置、备份和 VPN 数据。需要移动软件时请一起移动 EXE 和 `data`。
+
 </details>
 
 ---

@@ -7,9 +7,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 
 const oldExe = path.resolve(process.argv[2] || 'dist/Codex-API-Manager.exe');
-const newExe = path.resolve(process.argv[3] || 'dist-public-1.0.52/Codex-API-Manager.exe');
+const newExe = path.resolve(process.argv[3] || 'dist-public-1.0.53/Codex-API-Manager.exe');
 const oldRuntime = path.resolve(process.argv[4] || 'dist/win-unpacked/Codex API Manager.exe');
-const newRuntime = path.resolve(process.argv[5] || 'dist-public-1.0.52/win-unpacked/Codex API Manager.exe');
+const newRuntime = path.resolve(process.argv[5] || 'dist-public-1.0.53/win-unpacked/Codex API Manager.exe');
+const version = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const password = process.env.API_SWITCHBOARD_QA_UNLOCK_PASSWORD;
 if (!password) throw new Error('Supply the startup password in API_SWITCHBOARD_QA_UNLOCK_PASSWORD.');
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'switchboard-update-access-'));
@@ -60,20 +61,33 @@ try {
   });
   const before = hash(await fs.readFile(path.join(data, 'profiles.json')));
   const keyBefore = hash(await fs.readFile(path.join(data, 'secrets.key')));
-  await app.evaluate(({ app }, replacement) => {
+  const preserved = new Map();
+  for (const [name, bytes] of [
+    ['backups/update-preserve.enc', Buffer.from('synthetic backup')],
+    ['vpn/data/portable.key', crypto.randomBytes(32)],
+    ['vpn/data/clash.protected', crypto.randomBytes(96)],
+    ['vpn/data/preferences.json', Buffer.from('{"AutoConnect":false,"LastMode":"app"}')],
+    ['vpn/cores/fixture-marker.txt', Buffer.from('synthetic core directory marker')],
+  ]) {
+    const file = path.join(data, name);
+    await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, bytes);
+    preserved.set(file, hash(bytes));
+  }
+  await app.evaluate(({ app }, { replacement, version }) => {
     const req = process.mainModule.require;
     const { Updater } = req(app.getAppPath() + '/updater.mjs');
     Updater.prototype.check = async function() {
       const bytes = req('node:fs').readFileSync(replacement);
-      this.release = { version: '1.0.52', url: 'https://github.com/liangc001/codex-api-manager/releases/download/v1.0.52/Codex-API-Manager.exe',
+      this.release = { version, url: 'https://github.com/liangc001/codex-api-manager/releases/download/v' + version + '/Codex-API-Manager.exe',
         size: bytes.length, digest: req('node:crypto').createHash('sha256').update(bytes).digest('hex') };
       this.fetcher = async () => new Response(bytes);
-      this.status.phase = 'available'; this.status.latestVersion = '1.0.52';
+      this.status.phase = 'available'; this.status.latestVersion = version;
       return this.state();
     };
-  }, newExe);
+  }, { replacement: newExe, version });
   await page.locator('#settings').click();
   await page.locator('#check-update').click();
+  await page.waitForFunction(async () => (await window.codexManager.request('update-status')).phase === 'available');
   await page.locator('#close-settings').click();
   const closed = app.waitForEvent('close', { timeout: 90000 });
   await page.locator('#install-update').click();
@@ -90,6 +104,7 @@ try {
   });
   assert.equal(hash(await fs.readFile(path.join(data, 'profiles.json'))), before);
   assert.equal(hash(await fs.readFile(path.join(data, 'secrets.key'))), keyBefore);
+  for (const [file, checksum] of preserved) assert.equal(hash(await fs.readFile(file)), checksum, 'Updater changed a preserved data file.');
   assert.doesNotMatch(await fs.readFile(path.join(root, 'codex/config.toml'), 'utf8'), /127\.0\.0\.1/);
   stopTestCopy();
   app = await electron.launch({ executablePath: newRuntime, env, timeout: 60000 });
@@ -101,7 +116,8 @@ try {
   await main.waitForFunction(() => document.querySelector('#count')?.textContent === '1');
   assert.equal((await main.evaluate(() => window.codexManager.request('login-status'))).remembered, true);
   assert.equal(hash(await fs.readFile(path.join(data, 'secrets.key'))), keyBefore);
-  console.log('Real 1.0.51 to 1.0.52 update passed: same EXE path, checksum, helper restart, monitor cleanup, preserved API/key, password unlock and automatic login.');
+  for (const [file, checksum] of preserved) assert.equal(hash(await fs.readFile(file)), checksum, 'Startup changed a preserved data file.');
+  console.log('Real upgrade to ' + version + ' passed: same EXE path, checksum, restart, API/key/backup/VPN data preserved, password unlock and automatic login.');
 } finally {
   await app?.close();
   stopTestCopy();
