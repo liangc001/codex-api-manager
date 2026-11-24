@@ -35,4 +35,5 @@ vpn-diagnostics*.json
 startup-access.bin
 release-password.txt
 bootstrap.enc
+links.json
 archive/

@@ -159,6 +159,8 @@ else {
     manager = new Manager({ ...overrides, dataDir: storage.settings.dataDir, codec: await portableCodec(dataRoot) });
     manager.storage = storage;
     await manager.init();
+    const { LinkStore, LINK_GROUPS } = await import('../links.mjs');
+    const links = new LinkStore(dataRoot);
     const vpnFixture = !app.isPackaged && process.env.API_SWITCHBOARD_VPN_FIXTURE;
     const vpnData = path.join(vpnHome, 'data');
     const loginPath = app.isPackaged && process.env.PORTABLE_EXECUTABLE_FILE;
@@ -243,6 +245,16 @@ else {
         if (quitRequested) throw new Error('程序正在等待请求完成并退出。');
         if (route === 'check-update') return await updater.check();
         if (['downloading', 'installing'].includes(updater.status.phase)) throw new Error('软件正在更新，请稍候。');
+        if (route === 'links') return { links: await links.list(), groups: LINK_GROUPS };
+        if (route === 'links-save') return { links: await links.save(input) };
+        if (route === 'links-delete') return { links: await links.remove(input.id) };
+        if (route === 'links-pin') return { links: await links.setPinned(input.id, input.pinned) };
+        if (route === 'links-open') {
+          const url = await links.resolve(input.id);
+          try { await shell.openExternal(url); }
+          catch { throw new Error('无法打开浏览器，请稍后重试。'); }
+          return { ok: true };
+        }
         if (route === 'vpn-overview') {
           return vpnResult(vpn.child ? await vpn.call('status') : vpnOverview(vpnStopped));
         }

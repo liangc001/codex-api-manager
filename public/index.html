@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="./visual-polish.css">
   <link rel="stylesheet" href="./workspace-ui.css">
   <link rel="stylesheet" href="./rainbow-theme.css">
+  <link rel="stylesheet" href="./links-ui.css">
   <script src="./theme.js"></script>
   <script src="./lucide.js" defer></script>
   <script src="./app.js" defer></script>
@@ -30,6 +31,7 @@
       <button id="client-codex" type="button" aria-pressed="true"><i data-lucide="square-terminal"></i>Codex</button>
       <button id="client-claude" type="button" aria-pressed="false"><i data-lucide="terminal"></i>Claude Code</button>
     </nav>
+    <section id="quick-links" class="quick-links" aria-label="快捷访问"><span class="quick-links-label">快捷访问</span><nav id="quick-links-list" aria-label="首页常用网站"></nav><button id="open-links" type="button" class="links-entry" aria-haspopup="dialog" aria-controls="links-dialog"><span>全部链接</span><i data-lucide="arrow-up-right"></i></button></section>
     <section id="vpn-workspace" aria-labelledby="vpn-title" hidden>
       <div class="vpn-heading">
         <h2 id="vpn-title"><i data-lucide="network"></i>VPN</h2>
@@ -114,6 +116,22 @@
       <div id="profiles" class="profiles"></div>
     </section>
   </main>
+  <dialog id="links-dialog" aria-labelledby="links-title">
+    <div class="dialog-heading links-heading"><div><h2 id="links-title">常用链接</h2><p>点亮星标，固定到首页</p></div><button id="close-links" type="button" class="icon" aria-label="关闭常用链接"><i data-lucide="x"></i></button></div>
+    <div class="links-toolbar"><div class="links-search"><i data-lucide="search" aria-hidden="true"></i><input id="links-search" type="search" placeholder="搜索网站或工具" aria-label="搜索常用链接" maxlength="80"></div><button id="links-manage" type="button" aria-pressed="false">管理</button><button id="links-add" type="button"><i data-lucide="plus"></i>添加</button></div>
+    <nav id="links-categories" class="links-categories" aria-label="链接分类"></nav>
+    <div class="links-scroll">
+      <form id="links-form" class="links-form" hidden>
+        <div class="links-form-heading"><h3 id="links-form-title">添加链接</h3><button id="links-cancel-edit" type="button" class="plain">取消</button></div>
+        <input id="link-id" type="hidden">
+        <div class="links-form-fields"><label>名称<input id="link-name" maxlength="40" required autocomplete="off" placeholder="例如：我的工具"></label><label>分类<select id="link-group"></select></label><label class="link-url-field">网页地址<input id="link-url" type="url" maxlength="2000" required autocomplete="off" placeholder="https://example.com"></label></div>
+        <div class="links-form-actions"><button type="submit" class="primary"><i data-lucide="check"></i>保存</button></div>
+      </form>
+      <div id="links-content" class="links-content"></div>
+      <p id="links-empty" class="links-empty" hidden>没有匹配的链接</p>
+    </div>
+    <footer class="links-footer"><span id="links-message" role="status">在默认浏览器中打开</span><button id="links-undo" type="button" class="plain" hidden>撤销移除</button></footer>
+  </dialog>
   <dialog id="api-details" aria-labelledby="api-details-title">
     <div class="dialog-heading"><h2 id="api-details-title">API 详情</h2><button id="close-api-details" type="button" class="icon" aria-label="关闭详情"><i data-lucide="x"></i></button></div>
     <div id="api-details-content"></div>
@@ -253,5 +271,6 @@
   <dialog id="auto-repair-records-dialog" aria-labelledby="auto-repair-records-title"><div class="dialog-heading"><div><div class="repair-dialog-eyebrow"><i data-lucide="history"></i><span>连接活动</span></div><h2 id="auto-repair-records-title">旧对话兼容记录</h2><p>最近 10 批 · 本机加密保存</p></div><button id="close-auto-repair-records" type="button" class="icon" aria-label="关闭处理记录"><i data-lucide="x"></i></button></div><div class="auto-repair-records-body"><p id="auto-repair-records-status" role="status"></p><div id="auto-repair-records"></div><div id="auto-repair-pending"></div></div><div class="auto-repair-records-footer"><i data-lucide="shield-check"></i><span>仅调整连接归属，保留聊天正文</span></div></dialog>
   <script src="./session-repair-ui.js" defer></script>
   <script src="./vpn-ui.js" defer></script>
+  <script src="./links-ui.js" defer></script>
 </body>
 </html>

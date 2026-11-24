@@ -65,6 +65,9 @@ try {
   const preserved = new Map();
   const retainedFiles = [
     ['backups/update-preserve.enc', Buffer.from('synthetic backup')],
+    ['links.json', Buffer.from(JSON.stringify({ version: 1, links: [
+      { id: 'fixture-home', name: 'Preserved shortcut', url: 'https://example.invalid/', group: 'tools', pinned: true, note: '' },
+    ] }))],
   ];
   if (!emptyVpn) retainedFiles.push(
     ['vpn/data/portable.key', crypto.randomBytes(32)],
@@ -118,6 +121,7 @@ try {
   await locked.locator('#unlock-submit').click();
   const main = await until(async () => app.windows().find(w => /\/index\.html$/.test(w.url())));
   await main.waitForFunction(() => document.querySelector('#count')?.textContent === '1');
+  await main.locator('#quick-links-list').getByRole('link', { name: /Preserved shortcut/ }).waitFor();
   if (emptyVpn) {
     await main.locator('#vpn-controls').waitFor();
     assert.equal(await main.locator('#vpn-setup').isVisible(), false);

@@ -5,10 +5,12 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Manager } from './core.mjs';
 import { MonitorController } from './monitor.mjs';
+import { LinkStore, LINK_GROUPS } from './links.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const manager = new Manager();
 await manager.init();
+const links = new LinkStore(manager.dataDir);
 const controller = new MonitorController(manager);
 await controller.init();
 const token = crypto.randomBytes(32).toString('hex');
@@ -22,6 +24,8 @@ const files = new Map([
   ['/workspace-ui.css', ['public/workspace-ui.css', 'text/css; charset=utf-8']],
   ['/rainbow-theme.css', ['public/rainbow-theme.css', 'text/css; charset=utf-8']],
   ['/theme.js', ['public/theme.js', 'text/javascript; charset=utf-8']],
+  ['/links-ui.js', ['public/links-ui.js', 'text/javascript; charset=utf-8']],
+  ['/links-ui.css', ['public/links-ui.css', 'text/css; charset=utf-8']],
   ['/lucide.js', ['node_modules/lucide/dist/umd/lucide.js', 'text/javascript; charset=utf-8']],
   // 新版界面（附加入口，不影响默认页面）：/v2
   ['/v2', ['public/v2/index.html', 'text/html; charset=utf-8']],
@@ -41,11 +45,15 @@ const server = http.createServer(async (req, res) => {
       if (req.headers['x-manager-token'] !== token) return send(403, { error: '请刷新页面后重试。' });
       if (req.method === 'GET' && route === '/api/metrics') return send(200, controller.monitor.summary());
       if (req.method === 'GET' && route === '/api/state') return send(200, await manager.exclusive(() => controller.state()));
+      if (req.method === 'GET' && route === '/api/links') return send(200, { links: await links.list(), groups: LINK_GROUPS });
       if (req.method !== 'POST' || !req.headers['content-type']?.startsWith('application/json')) return send(405, { error: '请求格式不正确。' });
       let body = '';
       for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 32000) return send(413, { error: '请求过大。' }); }
       const input = JSON.parse(body || '{}');
       const actions = {
+        '/api/links-save': async () => ({ links: await links.save(input) }),
+        '/api/links-delete': async () => ({ links: await links.remove(input.id) }),
+        '/api/links-pin': async () => ({ links: await links.setPinned(input.id, input.pinned) }),
         '/api/read-key': async () => ({ key: await manager.readKey(input.id) }),
         '/api/save': () => controller.save(input), '/api/delete': () => controller.remove(input.id),
         '/api/switch': () => controller.switchTo(input.id), '/api/restore': () => controller.restore(),

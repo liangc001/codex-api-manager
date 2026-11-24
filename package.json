@@ -1,6 +1,6 @@
 {
   "name": "codex-api-manager",
-  "version": "1.0.55",
+  "version": "1.0.56",
   "private": true,
   "type": "module",
   "description": "Local Windows API switchboard for Codex and Claude Code",
@@ -52,6 +52,7 @@
       "storage.mjs",
       "portable.mjs",
       "models.mjs",
+      "links.mjs",
       "transfer.mjs",
       "support.mjs",
       "session-repair.mjs",
@@ -63,9 +64,27 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "vpn/artifacts/broker", "to": "vpn", "filter": ["Switchboard.Vpn.exe"] },
-      { "from": "vpn/artifacts/distribution", "to": "vpn", "filter": ["bootstrap.enc"] },
-      { "from": "vpn/licenses", "to": "vpn/licenses", "filter": ["*-LICENSE.txt"] }
+      {
+        "from": "vpn/artifacts/broker",
+        "to": "vpn",
+        "filter": [
+          "Switchboard.Vpn.exe"
+        ]
+      },
+      {
+        "from": "vpn/artifacts/distribution",
+        "to": "vpn",
+        "filter": [
+          "bootstrap.enc"
+        ]
+      },
+      {
+        "from": "vpn/licenses",
+        "to": "vpn/licenses",
+        "filter": [
+          "*-LICENSE.txt"
+        ]
+      }
     ],
     "win": {
       "target": "portable",
