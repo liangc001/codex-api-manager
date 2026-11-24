@@ -7,7 +7,7 @@ public sealed record ClientPreferences
 {
     public bool AutoRecover { get; init; } = true;
     public bool AutoConnect { get; init; }
-    public string LastMode { get; init; } = "app";
+    public string LastMode { get; init; } = "system";
     public string LastRegion { get; init; } = ExitCatalog.Auto;
     public Dictionary<string, string> LastLines { get; init; } = new();
 }
@@ -27,7 +27,7 @@ public sealed class PreferencesStore
     private static ClientPreferences Validate(ClientPreferences value) => value with
     {
         LastRegion = Region(value.LastRegion) ? value.LastRegion : ExitCatalog.Auto,
-        LastMode = value.LastMode == "system" ? "system" : "app",
+        LastMode = value.LastMode == "app" ? "app" : "system",
         LastLines = (value.LastLines ?? new()).Where(p => Region(p.Key) && p.Value != null &&
             p.Value.Length == 64 && p.Value.All(Uri.IsHexDigit)).Take(64).ToDictionary(p => p.Key, p => p.Value)
     };

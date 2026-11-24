@@ -2,6 +2,10 @@
   if (!window.codexManager) return;
   const workspace = $('vpn-workspace'), details = $('vpn-details'), more = $('vpn-more');
   const region = $('vpn-region'), mode = $('vpn-mode');
+  const selectedMode = () => mode.querySelector('input:checked').value;
+  const selectMode = value => {
+    for (const input of mode.querySelectorAll('input')) input.checked = input.value === value;
+  };
   const labels = { disconnected: '未连接', connecting: '正在连接', switching: '正在切换', connected: '已连接', recovering: '正在恢复',
     external: '系统代理已被接管', modified: '绕行规则已改变', disconnecting: '正在断开', error: '连接异常',
     checking: '正在检测线路', updating: '正在更新订阅', importing: '正在导入配置' };
@@ -60,11 +64,11 @@
     $('vpn-load-regions').disabled = statusUnavailable;
     region.hidden = dormant;
     region.disabled = busy || statusUnavailable;
-    if (connected || (busy && ['connect', 'open-codex'].includes(status.operation))) mode.value = status.mode || 'app';
-    else if (lastMode !== status.preferredMode && status.preferredMode) mode.value = status.preferredMode;
+    if (connected || (busy && ['connect', 'open-codex'].includes(status.operation))) selectMode(status.mode || 'system');
+    else if (lastMode !== status.preferredMode && status.preferredMode) selectMode(status.preferredMode);
     lastMode = status.preferredMode;
     mode.disabled = connected || busy || statusUnavailable;
-    message('vpn-scope', statusUnavailable ? '' : mode.value === 'system' ? '系统代理' : '应用代理');
+    mode.title = connected ? '切换代理范围前请先断开连接' : '选择代理范围';
     const sameRegion = status.requestedRegion === region.value;
     $('vpn-connect').querySelector('span').textContent = !connected ? '连接' : retry ? status.phase === 'external' || status.phase === 'modified' ? '重新接管' : '重新连接' : sameRegion ? '重新连接' : '切换地区';
     $('vpn-connect').disabled = busy || statusUnavailable;
@@ -179,13 +183,20 @@
   };
   region.onchange = () => { if (state) render(state); };
   mode.onchange = () => { if (state) render(state); };
+  mode.addEventListener('pointerdown', event => {
+    const target = event.target.closest('label')?.querySelector('input');
+    if (!target || !mode.disabled || !state?.connected || target.checked) return;
+    const hint = '请先断开，再切换代理范围。';
+    notice = hint; render(state);
+    setTimeout(() => { if (notice === hint) { notice = ''; render(state); } }, 3500);
+  });
   $('vpn-retry-status').onclick = () => request('overview');
   $('vpn-load-regions').onclick = async () => {
     const trigger = $('vpn-load-regions');
     await request('status');
     if (!region.hidden && (document.activeElement === trigger || document.activeElement === document.body)) region.focus();
   };
-  const choices = () => ({ region: region.value, mode: mode.value });
+  const choices = () => ({ region: region.value, mode: selectedMode() });
   $('vpn-connect').onclick = () => request('connect', choices());
   $('vpn-codex').onclick = () => request('open-codex', choices());
   for (const [id, op] of Object.entries({ import: 'import', disconnect: 'disconnect', 'cancel-connect': 'cancel-connect',

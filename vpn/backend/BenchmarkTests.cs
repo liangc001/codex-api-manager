@@ -41,12 +41,27 @@ internal static class BenchmarkTests
             preferences.Remember(ExitCatalog.Auto, PreferencesStore.LineKey(lines[0]));
             var proxy = new Proxy(true);
             var timings = new ConcurrentDictionary<int, (string Country, long Ms)>();
-            int mode = 0, index = 0, active = 0, maximum = 0;
+            int mode = 0, index = 0, active = 0, maximum = 0, cancelledProbes = 0;
             string selectionCountry = "US";
-            TaskCompletionSource? started = null;
+            TaskCompletionSource? started = null, releaseProbe = null;
             async Task<Health> Probe(int port, CancellationToken ct)
             {
+                if (mode == 7 && Interlocked.Increment(ref index) == 1)
+                    return new(false, "", false, "", 0, DateTimeOffset.Now);
                 if (mode == 2) { started!.TrySetResult(); await Task.Delay(Timeout.Infinite, ct); }
+                if (mode is 3 or 4 or 5 or 6)
+                {
+                    int item = Interlocked.Increment(ref index) - 1;
+                    if (mode == 3 && item == 0) await started!.Task.WaitAsync(ct);
+                    if (mode == 6 && item == 0) await releaseProbe!.Task.WaitAsync(ct);
+                    bool slow = mode == 3 ? service!.RankingBusy && item > 0 : mode == 6 ? item > 0 && item < lines.Length : item < 3;
+                    if (slow)
+                    {
+                        if (mode is 3 or 5 || item == 2) started!.TrySetResult();
+                        try { await Task.Delay(Timeout.Infinite, ct); }
+                        finally { Interlocked.Increment(ref cancelledProbes); }
+                    }
+                }
                 if (mode == 1)
                 {
                     int item = Interlocked.Increment(ref index) - 1;
@@ -99,6 +114,65 @@ internal static class BenchmarkTests
             Require(!service.RankingBusy && service.CurrentPid == original && proxy.Applies == 2 && service.RegionLatencies.All(row => row.Milliseconds == null),
                 "Cancelled scan switched active line or reported fabricated latency");
             checks.Add("scan-cancellation-preserves-current-line-and-does-not-fabricate-results");
+
+            service.InvalidateRankings();
+            mode = 3; index = 0; cancelledProbes = 0; started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            var quickClock = Stopwatch.StartNew();
+            await service.ConnectRegion(ExitCatalog.Auto).WaitAsync(TimeSpan.FromSeconds(12));
+            Require(quickClock.Elapsed < TimeSpan.FromSeconds(6) && cancelledProbes > 0 && !service.RankingBusy && service.FreshBenchmarks().Length > 0,
+                $"Quick auto: elapsed={quickClock.ElapsedMilliseconds}, cancelled={cancelledProbes}, busy={service.RankingBusy}, cached={service.FreshBenchmarks().Length}, probes={index}");
+            checks.Add("cold-auto-connects-on-first-measured-success-and-cleans-slow-probes");
+
+            mode = 4; index = 0; started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            scan = service.MeasureRegions(); await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Require(service.FreshBenchmarks().Length > 0, "Manual scan erased valid cached successes");
+            await service.ConnectRegion(ExitCatalog.Auto).WaitAsync(TimeSpan.FromSeconds(5));
+            Require(service.RankingBusy && !scan.IsCompleted, "Auto waited for or cancelled independent manual scan");
+            service.CancelRegionScan(); await scan.WaitAsync(TimeSpan.FromSeconds(10));
+            checks.Add("warm-auto-reuses-cache-without-waiting-or-cancelling-manual-scan");
+
+            var cachedKey = service.FreshBenchmarks().First().Key;
+            mode = 7; index = 0;
+            await service.ConnectRegion(ExitCatalog.Auto).WaitAsync(TimeSpan.FromSeconds(10));
+            Require(service.CurrentLineKey != cachedKey && index >= 2 && service.State.Health?.InternetOk == true,
+                "A failed cached line prevented auto from trying unmeasured fallback lines");
+            checks.Add("failed-cached-line-falls-back-to-another-verified-line");
+
+            service.InvalidateRankings();
+            mode = 6; index = 0; started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            releaseProbe = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            scan = service.MeasureRegions(); await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            // A manually started scan has no usable results yet; the first completed
+            // probe must unblock auto without waiting for its remaining slow siblings.
+            Require(service.FreshBenchmarks().Length == 0, "Cold manual-scan fixture already has a cached success");
+            var streamingConnection = service.ConnectRegion(ExitCatalog.Auto);
+            releaseProbe.TrySetResult();
+            await streamingConnection.WaitAsync(TimeSpan.FromSeconds(6));
+            Require(service.RankingBusy && !scan.IsCompleted, "Auto waited for all pending manual probes");
+            service.CancelRegionScan(); await scan;
+            checks.Add("cold-auto-uses-streaming-manual-result-before-slow-siblings-finish");
+            service.InvalidateRankings();
+            mode = 5; index = 0; started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            original = service.CurrentPid; int appliesBefore = proxy.Applies;
+            var connection = service.ConnectRegion(ExitCatalog.Auto);
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10)); service.CancelConnection();
+            try { await connection.WaitAsync(TimeSpan.FromSeconds(10)); throw new InvalidOperationException("Cancelled auto unexpectedly connected"); }
+            catch (InvalidOperationException e) when (e.Message.Contains("已取消")) { }
+            Require(!service.RankingBusy && service.CurrentPid == original && proxy.Applies == appliesBefore,
+                "Cancelling quick auto left probes running or changed the active proxy");
+            checks.Add("quick-auto-cancellation-keeps-existing-connection-and-cleans-probes");
+
+            service.InvalidateRankings();
+            mode = 5; index = 0; started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            connection = service.ConnectRegion(ExitCatalog.Auto);
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10)); service.NotifyNetworkChanged();
+            try { await connection.WaitAsync(TimeSpan.FromSeconds(10)); throw new InvalidOperationException("Changed-network auto unexpectedly connected"); }
+            catch (InvalidOperationException e) when (!e.Message.Contains("unexpectedly")) { }
+            Require(service.CurrentPid == original && proxy.Applies == appliesBefore && service.FreshBenchmarks().Length == 0,
+                "Quick auto committed a result from an invalidated network");
+            checks.Add("network-change-prevents-quick-auto-commit");
+
+            mode = 2;
             started = new(TaskCreationOptions.RunContinuationsAsynchronously);
             scan = service.MeasureRegions(); await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
             await service.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10)); service = null;

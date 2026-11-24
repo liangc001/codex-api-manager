@@ -37,6 +37,9 @@ public sealed partial class ConnectionService
         }
     }
     public Task MeasureRegions(CancellationToken ct = default)
+        => StartRegionScan(false, ct);
+
+    private Task StartRegionScan(bool quick, CancellationToken ct)
     {
         lock (rankingSync)
         {
@@ -46,9 +49,19 @@ public sealed partial class ConnectionService
             rankingOperation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, ct);
             int version = ++rankingVersion, epoch = Volatile.Read(ref networkEpoch);
             var lines = ProfileStore.Ids.SelectMany(ReadSource).GroupBy(PreferencesStore.LineKey).Select(g => g.First()).ToArray();
+            if (quick)
+            {
+                Preferences.Value.LastLines.TryGetValue(ExitCatalog.Auto, out var remembered);
+                // Sample different sources/regions before trying every sibling of one region.
+                lines = lines.GroupBy(l => (l.Profile, l.Country)).SelectMany(group => group
+                    .OrderBy(l => PreferencesStore.LineKey(l) == remembered ? 0 : 1).ThenBy(l => l.Priority)
+                    .Select((line, round) => (line, round)))
+                    .OrderBy(item => PreferencesStore.LineKey(item.line) == remembered ? -1 : item.round)
+                    .ThenBy(item => item.line.Priority).Select(item => item.line).ToArray();
+            }
             Volatile.Write(ref rankingBusy, 1);
             var token = rankingOperation.Token;
-            rankingTask = Task.Run(() => ScanRegions(lines, version, epoch, token));
+            rankingTask = Task.Run(() => ScanRegions(lines, version, epoch, quick, token));
             return rankingTask;
         }
     }
@@ -106,19 +119,24 @@ public sealed partial class ConnectionService
                 best != null ? "已测" : status, best == null ? "" : ProfileStore.Name(best.Profile));
         }).OrderBy(row => row.Milliseconds ?? long.MaxValue).ThenBy(row => row.Country).ToArray();
     }
-    private async Task ScanRegions(ExitCatalog.CandidateLine[] lines, int version, int epoch, CancellationToken ct)
+    private async Task ScanRegions(ExitCatalog.CandidateLine[] lines, int version, int epoch, bool quick, CancellationToken ct)
     {
         var results = new Dictionary<string, LineBenchmark>();
-        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct); budget.CancelAfter(TimeSpan.FromMinutes(2));
+        // A manual rescan must not erase still-valid successes while probes are pending.
+        var retained = FreshBenchmarks().ToDictionary(m => m.Key);
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(quick ? TimeSpan.FromSeconds(24) : TimeSpan.FromMinutes(2));
         bool complete = false;
         void Publish(bool finished)
         {
             lock (rankingSync)
             {
                 if (rankingVersion != version || epoch != Volatile.Read(ref networkEpoch)) return;
-                lineBenchmarks = new(results);
-                rankingRows = BuildRankingRows(lines, results.Values, finished);
-                rankingStatus = !finished ? $"测速中 {results.Count} / {lines.Length}" : complete
+                lineBenchmarks = new(retained);
+                foreach (var result in results.Values) lineBenchmarks[result.Key] = result;
+                rankingRows = BuildRankingRows(lines, lineBenchmarks.Values, finished);
+                rankingStatus = quick ? !finished ? "正在筛选可用线路…" : results.Values.Any(m => m.Milliseconds.HasValue)
+                    ? "快速筛选完成" : "快速筛选结束" : !finished ? $"测速中 {results.Count} / {lines.Length}" : complete
                     ? $"已测 {results.Count} / {lines.Length} · {DateTime.Now:HH:mm}"
                     : $"已停止 {results.Count} / {lines.Length}";
             }
@@ -145,9 +163,53 @@ public sealed partial class ConnectionService
     }
     private async Task<LineBenchmark[]> EnsureAutoBenchmarks(CancellationToken ct)
     {
-        if (RankingBusy || FreshBenchmarks().Length == 0) await MeasureRegions(ct).WaitAsync(ct);
         ct.ThrowIfCancellationRequested();
         var measured = FreshBenchmarks();
+        if (measured.Length != 0) return measured;
+
+        Task scan; bool ownsScan; int version;
+        lock (rankingSync)
+        {
+            ownsScan = rankingTask.IsCompleted;
+            scan = StartRegionScan(true, ct);
+            version = rankingVersion;
+        }
+        try
+        {
+            // Do not wait for the slowest node or an entire manual scan. Allow a short
+            // comparison window after the first success, then choose its lowest latency.
+            var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void Observe()
+            {
+                if (FreshBenchmarks().Length != 0) ready.TrySetResult();
+            }
+            RankingsChanged += Observe;
+            try
+            {
+                Observe();
+                using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                var deadline = Task.Delay(TimeSpan.FromSeconds(24), limit.Token);
+                await Task.WhenAny(scan, ready.Task, deadline).WaitAsync(ct);
+                limit.Cancel();
+                if (ready.Task.IsCompleted)
+                    await Task.WhenAny(scan, Task.Delay(500, ct)).WaitAsync(ct);
+            }
+            finally { RankingsChanged -= Observe; }
+            ct.ThrowIfCancellationRequested();
+            measured = FreshBenchmarks();
+        }
+        finally
+        {
+            // Only stop the short scan started by this connection. A user-requested
+            // full scan has its own lifecycle and must continue independently.
+            if (ownsScan)
+            {
+                lock (rankingSync)
+                    if (rankingVersion == version) rankingOperation?.Cancel();
+                await scan;
+            }
+        }
+        ct.ThrowIfCancellationRequested();
         if (measured.Length == 0) throw new InvalidOperationException("暂无可用的延迟实测结果，请检查网络后重新测速。");
         return measured;
     }

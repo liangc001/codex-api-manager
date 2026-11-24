@@ -64,7 +64,7 @@ function renderTray(state, client = 'codex') {
   const netState = vpnTrayState;
   const currentRegion = netState?.requestedRegion || netState?.preferredRegion || 'auto';
   const runVpn = (op, region = currentRegion) => {
-    if (!quitRequested) vpn.call(op, { region, mode: netState?.proxyPort ? netState.mode : netState?.preferredMode || 'app' }).catch(() => trayAction('vpn'));
+    if (!quitRequested) vpn.call(op, { region, mode: netState?.proxyPort ? netState.mode : netState?.preferredMode || 'system' }).catch(() => trayAction('vpn'));
   };
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '打开主窗口', click: showWindow },
@@ -177,7 +177,7 @@ else {
       const prefs = vpnPreferences();
       return { imported: fsSync.existsSync(path.join(vpnData, 'portable.key')), dormant: true, stopped,
         error: bootstrapWarning,
-        preferredRegion: prefs.LastRegion, preferredMode: prefs.LastMode,
+        preferredRegion: prefs.LastRegion, preferredMode: prefs.LastMode || 'system',
         autoConnect: prefs.AutoConnect === true, autoRecover: prefs.AutoRecover !== false };
     }
     const vpnResult = result => {

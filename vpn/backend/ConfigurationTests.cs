@@ -10,6 +10,12 @@ internal static class ConfigurationTests
         void Require(bool condition, string text) { if (!condition) throw new InvalidOperationException(text); }
         try
         {
+            string preferenceFile = Path.Combine(root, "preferences.json");
+            var preferences = new PreferencesStore(preferenceFile);
+            Require(preferences.Value.LastMode == "system", "Fresh installations should default to system proxy");
+            preferences.Update(p => p with { LastMode = "app" });
+            Require(new PreferencesStore(preferenceFile).Value.LastMode == "app", "An existing explicit client mode was not preserved");
+            results.Add("new-system-default-preserves-an-existing-explicit-client-mode");
             var raw = ProfileStore.NormalizeClash(new JsonObject { ["proxies"] = new JsonArray(new JsonObject {
                 ["name"] = "United States fixture", ["type"] = "socks5", ["server"] = "127.0.0.1", ["port"] = 9 }) });
             var policy = new JsonObject {

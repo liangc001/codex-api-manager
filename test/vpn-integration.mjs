@@ -58,7 +58,7 @@ try {
     const args = ['--test', name, portable, path.join(temp, name), report, String(testBase), String(testRelay)];
     const result = await run(executable, args, { timeout: 120000 }).catch(e => e);
     const summary = JSON.parse(await fs.readFile(report, 'utf8'));
-    assert.ok(!result.code && summary.success, name + ': ' + summary.error);
+    assert.ok(!result.code && summary.success, name + ': ' + summary.error + ' (completed: ' + summary.results.join(', ') + ')');
     console.log(name, summary.results.length, 'checks passed');
   }
   assert.equal((await vpn.call('status')).imported, false);
@@ -69,6 +69,7 @@ try {
   await vpn.call('import', { directory: portable });
   const configured = await waitUntil(({ imported, busy }) => imported && !busy);
   assert.deepEqual(configured.regions.map(r => r.code).sort(), ['DE', 'US', 'auto']);
+  assert.equal(configured.preferredMode, 'system');
   assert.equal(await hash(key), before);
   assert.equal(await hash(path.join(home, 'data', 'portable.key')), before);
   await assert.rejects(vpn.call('import', { directory: portable }));
@@ -78,7 +79,7 @@ try {
 
   const occupied = await listen(relay);
   try {
-    await vpn.call('connect', { region: 'US' });
+    await vpn.call('connect', { region: 'US', mode: 'app' });
     assert.match((await waitUntil(({ busy }) => !busy)).error, /被占用/);
     await assert.rejects(vpn.proxyUrl(), /未回退/);
     assert.equal(occupied.listening, true);
@@ -87,11 +88,11 @@ try {
   await waitUntil(s => s.phase === 'disconnected' && !s.busy);
   assert.equal(await vpn.proxyUrl(), null);
 
-  await vpn.call('connect', { region: 'DE' });
+  await vpn.call('connect', { region: 'DE', mode: 'app' });
   const mismatch = await waitUntil(({ busy }) => !busy);
   assert.equal(mismatch.connected, false);
   assert.equal(mismatch.phase, 'error');
-  await vpn.call('connect', { region: 'US' });
+  await vpn.call('connect', { region: 'US', mode: 'app' });
   await vpn.call('cancel-connect');
   assert.match((await waitUntil(({ busy }) => !busy)).error, /已取消/);
   await vpn.call('benchmark');
@@ -100,7 +101,7 @@ try {
   await vpn.call('benchmark');
   const ranked = await waitUntil(s => !s.rankingBusy && s.rankings.some(r => r.milliseconds));
   assert.equal(ranked.rankings[0].code, 'US');
-  await vpn.call('connect', { region: 'auto' });
+  await vpn.call('connect', { region: 'auto', mode: 'app' });
   const status = await waitUntil(s => s.connected && !s.busy && s.proxyPort === relay);
   assert.equal(status.country, 'US');
   assert.equal(await vpn.proxyUrl(), 'http://127.0.0.1:' + relay);
@@ -133,12 +134,26 @@ try {
     await page.locator('#vpn-import').click();
     await page.waitForFunction(() => !document.querySelector('#vpn-controls').hidden || !document.querySelector('#vpn-error').hidden);
     assert.equal(await page.locator('#vpn-error').isVisible(), false, await page.locator('#vpn-error').textContent());
+    assert.equal(await page.locator('#vpn-controls #vpn-mode').count(), 1);
+    await page.locator('#vpn-mode label').filter({ hasText: '系统代理' }).click();
+    assert.equal(await page.locator('#vpn-mode input[value=system]').isChecked(), true);
+    assert.match(await page.locator('#vpn-mode label').filter({ hasText: '系统代理' }).getAttribute('title'), /浏览器/);
+    assert.equal((await page.evaluate(() => window.codexManager.request('vpn-overview'))).result.connected, false);
+    await page.locator('#vpn-mode input[value=system]').focus();
+    await page.keyboard.press('ArrowLeft');
+    assert.equal(await page.locator('#vpn-mode input[value=app]').isChecked(), true);
     await page.locator('#vpn-region').selectOption('US');
     await page.locator('#vpn-connect').click();
     await page.waitForFunction(() => document.querySelector('#vpn-status').textContent === '已连接');
     await page.waitForFunction(() => document.querySelector('#vpn-latency').textContent === '27 ms');
-    assert.equal(await page.locator('#vpn-scope').textContent(), '应用代理');
+    assert.equal(await page.locator('#vpn-mode input[value=app]').isChecked(), true);
+    assert.equal(await page.locator('#vpn-mode-hint, #vpn-scope').count(), 0);
     assert.equal(await page.locator('#vpn-exit-ip').textContent(), '192.0.2.10');
+    assert.equal(await page.locator('#vpn-mode input[value=system]').isDisabled(), true);
+    assert.match(await page.locator('#vpn-mode').getAttribute('title'), /先断开/);
+    await page.locator('#vpn-mode label').filter({ hasText: '系统代理' }).locator('span').click({ force: true });
+    await page.locator('#vpn-notice').filter({ hasText: '请先断开' }).waitFor();
+    assert.equal(await page.locator('#vpn-mode input[value=app]').isChecked(), true);
     await desktop.evaluate(({ ipcMain, app }) => {
       const key = 'manager:request';
       const handler = ipcMain._invokeHandlers.get(key);
@@ -153,6 +168,7 @@ try {
     await page.locator('#vpn-retry-status').waitFor();
     assert.equal(await page.locator('#vpn-latency').textContent(), '—');
     assert.equal(await page.locator('#vpn-connect').isDisabled(), true);
+    assert.equal(await page.locator('#vpn-mode input[value=app]').isDisabled(), true);
     await desktop.evaluate(({ app }) => app.restoreVpnOverview());
     await page.locator('#vpn-retry-status').click();
     await page.waitForFunction(() => document.querySelector('#vpn-status').textContent === '已连接');

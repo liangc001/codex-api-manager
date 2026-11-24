@@ -89,9 +89,9 @@ public sealed partial class ConnectionService
             int selectionEpoch = chooseByLatency ? measured[0].Epoch : Volatile.Read(ref networkEpoch);
             var all = ProfileStore.Ids.SelectMany(ReadSource);
             var choices = all.Where(l =>
-                chooseByLatency ? scores.ContainsKey(PreferencesStore.LineKey(l)) : targetRegion == ExitCatalog.Auto ||
+                chooseByLatency || targetRegion == ExitCatalog.Auto ||
                     l.Country == targetRegion || l.Country == null || scores.TryGetValue(PreferencesStore.LineKey(l), out var score) && score.Country == targetRegion)
-                .OrderBy(l => chooseByLatency ? 0 : automaticRecovery && PreferencesStore.LineKey(l) == currentLineKey ? 0 :
+                .OrderBy(l => chooseByLatency ? scores.ContainsKey(PreferencesStore.LineKey(l)) ? 0 : 1 : automaticRecovery && PreferencesStore.LineKey(l) == currentLineKey ? 0 :
                     scores.ContainsKey(PreferencesStore.LineKey(l)) ? 1 : PreferencesStore.LineKey(l) == remembered ? 2 : 3)
                 .ThenBy(l => scores.TryGetValue(PreferencesStore.LineKey(l), out var score) ? score.Milliseconds!.Value : long.MaxValue)
                 .ThenBy(l => l.Country == targetRegion ? 0 : 1).ThenBy(l => l.Priority).ToArray();
@@ -104,12 +104,16 @@ public sealed partial class ConnectionService
                 using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 attempt.CancelAfter(remaining < TimeSpan.FromSeconds(8) ? remaining : TimeSpan.FromSeconds(8));
                 Health? health;
+                LatencySample? verifiedLatency = null;
                 try
                 {
                     candidate = await Candidate(line.Profile, line.Raw, attempt.Token);
                     health = await VerifyRegion(candidate, attempt.Token);
-                    if ((automaticRecovery || chooseByLatency) && health != null && (await MeasureNormalLatency(candidate.Port, attempt.Token)).Milliseconds == null)
-                        health = null;
+                    if ((automaticRecovery || chooseByLatency) && health != null)
+                    {
+                        verifiedLatency = await MeasureNormalLatency(candidate.Port, attempt.Token);
+                        if (verifiedLatency.Milliseconds == null) health = null;
+                    }
                     if (health != null) SetSourceStatus(line.Profile, "可用");
                     else if (SourceStatus(line.Profile) == "未检测") SetSourceStatus(line.Profile, "未测通");
                 }
@@ -131,6 +135,12 @@ public sealed partial class ConnectionService
                     current = candidate;
                     candidate = null;
                     currentLineKey = PreferencesStore.LineKey(line);
+                    if (chooseByLatency && verifiedLatency?.Milliseconds is long ms)
+                    {
+                        lock (rankingSync)
+                            lineBenchmarks[currentLineKey] = new(currentLineKey, health.Country, line.Country, line.Profile,
+                                ms, DateTimeOffset.UtcNow, selectionEpoch);
+                    }
                     recoverySchedule.Reset();
                     try { Preferences.Remember(region, currentLineKey); }
                     catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AddLog("无法记住上次线路，当前连接不受影响。"); }

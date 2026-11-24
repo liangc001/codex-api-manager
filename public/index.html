@@ -34,7 +34,6 @@
       <div class="vpn-heading">
         <h2 id="vpn-title"><i data-lucide="network"></i>VPN</h2>
         <span id="vpn-status" role="status">读取中…</span>
-        <span id="vpn-scope" hidden></span>
         <button id="vpn-more" type="button" aria-expanded="false" aria-controls="vpn-details" hidden><span>线路详情</span><i data-lucide="chevron-down"></i></button>
       </div>
       <div id="vpn-setup" hidden><button id="vpn-import" type="button" class="primary"><i data-lucide="folder-input"></i>导入 VPN 便携目录</button></div>
@@ -47,6 +46,12 @@
         <div class="vpn-buttons vpn-primary">
           <div class="vpn-region-field"><label for="vpn-region">出口地区</label><select id="vpn-region"><option value="auto">自动选择</option></select>
             <button id="vpn-load-regions" type="button" aria-label="加载出口地区" hidden><span>自动选择</span><i data-lucide="chevron-down"></i></button></div>
+          <div class="vpn-mode-field">
+            <fieldset id="vpn-mode" aria-label="代理范围">
+              <label title="切换台及从这里启动的 Codex、Claude Code 使用代理"><input type="radio" name="vpn-proxy-mode" value="app"><span>客户端代理</span></label>
+              <label title="浏览器等支持 Windows 系统代理的应用也使用代理"><input type="radio" name="vpn-proxy-mode" value="system" checked><span>系统代理</span></label>
+            </fieldset>
+          </div>
           <button id="vpn-connect" type="button" class="primary"><i data-lucide="plug"></i><span>连接</span></button>
           <button id="vpn-disconnect" type="button" title="断开连接" aria-label="断开连接" hidden><i data-lucide="unplug"></i><span>断开</span></button>
           <button id="vpn-cancel-connect" type="button" hidden>取消连接</button>
@@ -197,7 +202,6 @@
           <section id="settings-panel-vpn" role="tabpanel" aria-labelledby="settings-tab-vpn" hidden>
             <div id="vpn-preferences">
               <h3>连接选项</h3>
-              <label class="vpn-mode-label">代理范围<select id="vpn-mode"><option value="app">切换台及从中启动的客户端</option><option value="system">Windows 系统代理</option></select></label>
               <div class="vpn-settings">
                 <label><input id="vpn-auto-recover" type="checkbox">断线后自动重连</label>
                 <label><input id="vpn-auto-connect" type="checkbox">打开切换台时连接</label>
